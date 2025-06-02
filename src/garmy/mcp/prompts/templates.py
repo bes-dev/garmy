@@ -115,7 +115,7 @@ Focus on actionable insights for athletic performance.
             metric_list = [m.strip() for m in metrics.split(",")]
 
             return f"""
-Analyze wellness trends across multiple metrics: {', '.join(metric_list)}
+Analyze wellness trends across multiple metrics: {", ".join(metric_list)}
 
 **Cross-Metric Analysis:**
 1. **Correlations**: how metrics influence each other

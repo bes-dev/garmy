@@ -329,7 +329,8 @@ class SampleMetricDiscovery:
         """Test validation fails for missing metric class."""
         configs = {
             "invalid_metric": MetricConfig(
-                metric_class=None, endpoint="/test/endpoint"  # Invalid
+                metric_class=None,
+                endpoint="/test/endpoint",  # Invalid
             )
         }
 
@@ -340,7 +341,8 @@ class SampleMetricDiscovery:
         """Test validation fails for missing endpoint."""
         configs = {
             "invalid_metric": MetricConfig(
-                metric_class=SampleMetric, endpoint=""  # Invalid empty endpoint
+                metric_class=SampleMetric,
+                endpoint="",  # Invalid empty endpoint
             )
         }
 
@@ -351,7 +353,8 @@ class SampleMetricDiscovery:
         """Test validation fails for None endpoint."""
         configs = {
             "invalid_metric": MetricConfig(
-                metric_class=SampleMetric, endpoint=None  # Invalid None endpoint
+                metric_class=SampleMetric,
+                endpoint=None,  # Invalid None endpoint
             )
         }
 
@@ -391,10 +394,12 @@ class SampleMetricDiscovery:
                 metric_class=SampleMetric, endpoint="/test/endpoint"
             ),
             "invalid_metric1": MetricConfig(
-                metric_class=None, endpoint="/test/endpoint"  # Invalid
+                metric_class=None,
+                endpoint="/test/endpoint",  # Invalid
             ),
             "invalid_metric2": MetricConfig(
-                metric_class=SampleMetric, endpoint=""  # Also invalid
+                metric_class=SampleMetric,
+                endpoint="",  # Also invalid
             ),
         }
 
@@ -561,7 +566,8 @@ class SampleMetricDiscoveryErrorHandling:
         """Test validation provides detailed error messages."""
         configs = {
             "problematic_metric": MetricConfig(
-                metric_class=SampleMetric, endpoint=""  # Invalid empty endpoint
+                metric_class=SampleMetric,
+                endpoint="",  # Invalid empty endpoint
             )
         }
 

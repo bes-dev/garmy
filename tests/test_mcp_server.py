@@ -12,6 +12,12 @@ from unittest.mock import Mock, patch
 import anyio
 import pytest
 
+try:
+    from builtins import BaseExceptionGroup  # Python 3.11+
+except ImportError:
+    # Python < 3.11 compatibility
+    BaseExceptionGroup = Exception
+
 from garmy.mcp.config import MCPConfig
 from garmy.mcp.server import GarmyMCPServer
 
@@ -75,7 +81,7 @@ class TestGarmyMCPServer:
         mock_discovery.validate_metrics.return_value = None
 
         config = MCPConfig(debug_mode=True)
-        server = GarmyMCPServer(config)
+        GarmyMCPServer(config)
 
         mock_logging_config.assert_called_once_with(level=logging.DEBUG)
 

@@ -509,9 +509,9 @@ class TestMetricsModuleStructure:
         ]
 
         for cls in classes:
-            assert hasattr(
-                cls, "__dataclass_fields__"
-            ), f"{cls.__name__} should be a dataclass"
+            assert hasattr(cls, "__dataclass_fields__"), (
+                f"{cls.__name__} should be a dataclass"
+            )
 
     def test_metric_configs_consistency(self):
         """Test metric configurations are consistent across modules."""
@@ -534,27 +534,27 @@ class TestMetricsModuleStructure:
                 module = __import__(f"garmy.metrics.{module_name}", fromlist=[""])
 
                 # Check required attributes exist
-                assert hasattr(
-                    module, "METRIC_CONFIG"
-                ), f"{module_name} missing METRIC_CONFIG"
-                assert hasattr(
-                    module, "__metric_config__"
-                ), f"{module_name} missing __metric_config__"
+                assert hasattr(module, "METRIC_CONFIG"), (
+                    f"{module_name} missing METRIC_CONFIG"
+                )
+                assert hasattr(module, "__metric_config__"), (
+                    f"{module_name} missing __metric_config__"
+                )
 
                 # Check config is valid
                 config = module.METRIC_CONFIG
-                assert isinstance(
-                    config, MetricConfig
-                ), f"{module_name} METRIC_CONFIG not MetricConfig instance"
-                assert (
-                    config.metric_class is not None
-                ), f"{module_name} missing metric_class"
+                assert isinstance(config, MetricConfig), (
+                    f"{module_name} METRIC_CONFIG not MetricConfig instance"
+                )
+                assert config.metric_class is not None, (
+                    f"{module_name} missing metric_class"
+                )
                 assert config.version is not None, f"{module_name} missing version"
 
                 # Check consistency between METRIC_CONFIG and __metric_config__
-                assert (
-                    module.__metric_config__ == config
-                ), f"{module_name} config exports inconsistent"
+                assert module.__metric_config__ == config, (
+                    f"{module_name} config exports inconsistent"
+                )
 
             except ImportError:
                 pytest.skip(f"Module {module_name} not implemented yet")
@@ -584,9 +584,9 @@ class TestMetricsModuleStructure:
                 has_endpoint = bool(config.endpoint)
                 has_builder = bool(config.endpoint_builder)
 
-                assert (
-                    has_endpoint or has_builder
-                ), f"{module_name} needs endpoint or endpoint_builder"
+                assert has_endpoint or has_builder, (
+                    f"{module_name} needs endpoint or endpoint_builder"
+                )
 
             except ImportError:
                 pytest.skip(f"Module {module_name} not implemented yet")
@@ -668,7 +668,10 @@ class TestMetricsDataValidation:
 
         # Test with very old timestamp
         reading = BodyBatteryReading(
-            timestamp=0, level=50, status="UNKNOWN", version=1.0  # Unix epoch
+            timestamp=0,
+            level=50,
+            status="UNKNOWN",
+            version=1.0,  # Unix epoch
         )
 
         dt = reading.datetime

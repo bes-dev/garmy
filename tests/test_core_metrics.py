@@ -401,10 +401,9 @@ class SampleMetricConcurrencyManager:
 
         dates = [date(2023, 12, 1), date(2023, 12, 2), date(2023, 12, 3)]
 
-        with (
-            patch.object(manager, "_fetch_concurrent") as mock_concurrent,
-            patch.object(manager, "_flatten_results") as mock_flatten,
-        ):
+        with patch.object(
+            manager, "_fetch_concurrent"
+        ) as mock_concurrent, patch.object(manager, "_flatten_results") as mock_flatten:
             mock_concurrent.return_value = ["result1", "result2", "result3"]
             mock_flatten.return_value = ["flattened1", "flattened2", "flattened3"]
 
@@ -513,9 +512,8 @@ class SampleMetricConcurrencyManager:
 
         dates = [date(2023, 12, 1)]
 
-        with (
-            patch("garmy.core.metrics.logging.error"),
-            pytest.raises(Exception, match="Executor failed"),
+        with patch("garmy.core.metrics.logging.error"), pytest.raises(
+            Exception, match="Executor failed"
         ):
             manager._fetch_concurrent(mock_fetch, dates)
 

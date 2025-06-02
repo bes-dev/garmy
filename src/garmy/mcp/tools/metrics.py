@@ -99,7 +99,7 @@ class MetricTools:
         if hasattr(first_obj, "__dict__"):
             # Use object attributes as CSV columns
             fieldnames = []
-            for key in first_obj.__dict__.keys():
+            for key in first_obj.__dict__:
                 if not key.startswith("_"):
                     fieldnames.append(key)
 
@@ -164,7 +164,7 @@ class MetricTools:
         if hasattr(first_obj, "__dict__"):
             # Use object attributes as CSV columns, with date as first column
             fieldnames = ["date"]
-            for key in first_obj.__dict__.keys():
+            for key in first_obj.__dict__:
                 if not key.startswith("_"):
                     fieldnames.append(key)
 
@@ -233,7 +233,7 @@ class MetricTools:
         fieldnames = ["date"]  # Always start with date
 
         if hasattr(first_activity, "__dict__"):
-            for key in first_activity.__dict__.keys():
+            for key in first_activity.__dict__:
                 if not key.startswith("_"):
                     fieldnames.append(key)
 
@@ -511,7 +511,7 @@ class MetricTools:
                 return f"Error: {e!s}"
 
         @mcp.tool()
-        async def get_metric_range(
+        async def get_metric_range(  # noqa: PLR0911
             metric_name: str,
             start_date: str,
             end_date: Optional[str] = None,

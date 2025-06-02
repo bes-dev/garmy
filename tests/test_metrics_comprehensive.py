@@ -1471,9 +1471,9 @@ class TestMetricsIntegration:
 
         for name in metrics_module.__all__:
             metric_class = getattr(metrics_module, name)
-            assert hasattr(
-                metric_class, "__dataclass_fields__"
-            ), f"{name} is not a dataclass"
+            assert hasattr(metric_class, "__dataclass_fields__"), (
+                f"{name} is not a dataclass"
+            )
 
     def test_metric_configs_have_required_fields(self):
         """Test all metric configs have required fields."""

@@ -194,13 +194,9 @@ class SampleMetricRegistry:
         config = MetricConfig(metric_class=SampleMetric, endpoint="/test/endpoint")
 
         # Mock import error
-        with (
-            patch(
-                "builtins.__import__",
-                side_effect=ImportError("Module not found"),
-            ),
-            patch("garmy.core.registry.MetricAccessor") as mock_accessor_class,
-        ):
+        with patch(
+            "builtins.__import__", side_effect=ImportError("Module not found")
+        ), patch("garmy.core.registry.MetricAccessor") as mock_accessor_class:
             mock_accessor = Mock()
             mock_accessor_class.return_value = mock_accessor
 
@@ -423,10 +419,9 @@ class SampleMetricRegistryEdgeCases:
         }
         mock_discover.return_value = mock_configs
 
-        with (
-            patch.object(MetricRegistry, "_create_accessor"),
-            patch("garmy.core.registry.logger") as mock_logger,
-        ):
+        with patch.object(MetricRegistry, "_create_accessor"), patch(
+            "garmy.core.registry.logger"
+        ) as mock_logger:
             MetricRegistry(mock_api_client)
 
             # Should log discovery process
@@ -553,10 +548,9 @@ class SampleMetricRegistryIntegration:
             else:
                 raise ImportError("Module not found")
 
-        with (
-            patch("builtins.__import__", side_effect=mock_import_side_effect),
-            patch("garmy.core.registry.MetricAccessor") as mock_standard_accessor_class,
-        ):
+        with patch("builtins.__import__", side_effect=mock_import_side_effect), patch(
+            "garmy.core.registry.MetricAccessor"
+        ) as mock_standard_accessor_class:
             mock_standard_accessor = Mock()
             mock_standard_accessor_class.return_value = mock_standard_accessor
 
@@ -590,13 +584,10 @@ class SampleMetricRegistryIntegration:
             else:
                 raise Exception("Creation failed")
 
-        with (
-            patch.object(
-                MetricRegistry, "_create_accessor", side_effect=mock_create_side_effect
-            ),
-            pytest.raises(
-                FactoryError, match="Failed to create accessor for bad_metric"
-            ),
+        with patch.object(
+            MetricRegistry, "_create_accessor", side_effect=mock_create_side_effect
+        ), pytest.raises(
+            FactoryError, match="Failed to create accessor for bad_metric"
         ):
             MetricRegistry(mock_api_client)
 

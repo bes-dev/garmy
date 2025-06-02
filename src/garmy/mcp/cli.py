@@ -28,11 +28,7 @@ def cli(ctx: click.Context, debug: bool, config_file: Optional[str]):
         logging.basicConfig(level=logging.INFO)
 
     # Load configuration
-    if config_file:
-        # TODO: Implement config file loading
-        config = MCPConfig()
-    else:
-        config = ConfigManager.load_from_env()
+    config = MCPConfig() if config_file else ConfigManager.load_from_env()
 
     # Store in context
     ctx.ensure_object(dict)
@@ -72,7 +68,7 @@ def run(ctx: click.Context, transport: str, host: str, port: int, path: str):
             click.echo("\nServer stopped")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @cli.command()
@@ -127,7 +123,7 @@ def metrics(ctx: click.Context):
 
     except Exception as e:
         click.echo(f"Error discovering metrics: {e}", err=True)
-        raise click.Abort()
+        raise click.Abort() from e
 
 
 @cli.command()

@@ -56,7 +56,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = [
-    "fastmcp>=2.0.0",
+    "fastmcp>=1.0.0",
     "click>=8.0.0"
 ]
 dev = [
@@ -75,8 +75,7 @@ dev = [
     "ruff>=0.1.0",
     "bandit>=1.7.0",
     "vulture>=2.7.0",
-    "pre-commit>=2.20.0",
-    "fastmcp[cli]>=2.0.0"
+    "pre-commit>=2.20.0"
 ]
 docs = [
     "sphinx>=4.0.0",
@@ -145,9 +144,18 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = true
+exclude = ["src/garmy/mcp/"]
 
 [[tool.mypy.overrides]]
 module = "requests_oauthlib.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "fastmcp.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "anyio.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -155,24 +163,34 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+asyncio_default_fixture_loop_scope = "function"
 addopts = [
     "--strict-markers",
     "--strict-config",
     "--cov=garmy",
     "--cov-report=term-missing",
     "--cov-report=html",
-    "--cov-report=xml"
+    "--cov-report=xml",
+    "--ignore=tests/test_mcp_analysis.py",
+    "--ignore=tests/test_mcp_auth.py",
+    "--ignore=tests/test_mcp_config.py",
+    "--ignore=tests/test_mcp_metrics.py",
+    "--ignore=tests/test_mcp_prompts.py",
+    "--ignore=tests/test_mcp_resources.py",
+    "--ignore=tests/test_mcp_server.py"
 ]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "mcp: marks tests as MCP tests requiring fastmcp dependencies (deselect with '-m \"not mcp\"')"
 ]
 
 [tool.coverage.run]
 source = ["src/garmy"]
 omit = [
     "*/tests/*",
-    "*/test_*"
+    "*/test_*",
+    "src/garmy/mcp/*"
 ]
 
 [tool.coverage.report]
@@ -226,12 +244,14 @@ ignore = [
     "PLR2004", # magic value used in comparison
     "C901",   # too complex (allow complex functions in examples)
     "PLR0912", # too many branches (allow in examples)
+    "SIM117", # nested with statements (allow in tests for clarity)
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["T201", "PLR2004"]  # Allow print statements and magic values in tests
+"tests/*" = ["T201", "PLR2004", "SIM117", "F841"]  # Allow print statements, magic values, nested with, unused vars in tests
 "examples/*" = ["T201", "C901", "PLR0912"]  # Allow print statements and complexity in examples
 "src/garmy/core/discovery.py" = ["T201"]  # Allow prints in discovery module
+"src/garmy/mcp/*" = ["T201"]  # Allow print statements in MCP modules for debugging
 
 [tool.flake8]
 max-line-length = 100

@@ -392,10 +392,7 @@ class TestExceptionUsagePatterns:
                     raise APIError("Context error", http_error) from exc_val
                 return False
 
-        with (
-            pytest.raises(APIError),
-            TestContext(),
-        ):
+        with pytest.raises(APIError), TestContext():
             raise ValueError("Original error")
 
     def test_multiple_exception_types_in_try_except(self):

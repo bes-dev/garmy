@@ -65,7 +65,7 @@ class ResourceProviders:
                     status["api_metrics_count"] = len(
                         list(self.server.api_client.metrics.keys())
                     )
-                except:
+                except Exception:
                     status["api_metrics_count"] = 0
 
             return json.dumps(status, indent=2, ensure_ascii=False)

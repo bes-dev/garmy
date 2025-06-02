@@ -76,13 +76,11 @@ class TestBaseHTTPClient:
         with patch("garmy.core.http_client.get_config"):
             client = BaseHTTPClient()
 
-        with (
-            patch("garmy.core.http_client.Session") as mock_session_class,
-            patch.object(
-                client, "_get_default_headers", return_value={"Test": "Header"}
-            ),
-            patch.object(client, "_create_retry_strategy") as mock_retry,
-        ):
+        with patch(
+            "garmy.core.http_client.Session"
+        ) as mock_session_class, patch.object(
+            client, "_get_default_headers", return_value={"Test": "Header"}
+        ), patch.object(client, "_create_retry_strategy") as mock_retry:
             mock_session = Mock()
             mock_session_class.return_value = mock_session
             mock_retry_strategy = Mock()
@@ -99,12 +97,13 @@ class TestBaseHTTPClient:
         with patch("garmy.core.http_client.get_config"):
             client = BaseHTTPClient()
 
-        with (
-            patch("garmy.core.http_client.Session") as mock_session_class,
-            patch.object(client, "_get_default_headers", return_value={}),
-            patch.object(client, "_create_retry_strategy") as mock_retry,
-            patch("garmy.core.http_client.HTTPAdapter") as mock_adapter_class,
-        ):
+        with patch(
+            "garmy.core.http_client.Session"
+        ) as mock_session_class, patch.object(
+            client, "_get_default_headers", return_value={}
+        ), patch.object(client, "_create_retry_strategy") as mock_retry, patch(
+            "garmy.core.http_client.HTTPAdapter"
+        ) as mock_adapter_class:
             mock_session = Mock()
             mock_session_class.return_value = mock_session
             mock_retry_strategy = Mock()
@@ -202,13 +201,9 @@ class TestBaseHTTPClient:
         mock_config.backoff_factor = 0.3
         mock_get_config.return_value = mock_config
 
-        with (
-            patch(
-                "garmy.core.http_client.get_retryable_status_codes",
-                return_value=[500, 502],
-            ),
-            patch("garmy.core.config.get_user_agent", return_value="test-agent"),
-        ):
+        with patch(
+            "garmy.core.http_client.get_retryable_status_codes", return_value=[500, 502]
+        ), patch("garmy.core.config.get_user_agent", return_value="test-agent"):
             client = BaseHTTPClient()
 
         # Should create real session
@@ -228,12 +223,9 @@ class TestBaseHTTPClient:
         mock_config.backoff_factor = 0.3
         mock_get_config.return_value = mock_config
 
-        with (
-            patch(
-                "garmy.core.http_client.get_retryable_status_codes", return_value=[500]
-            ),
-            patch("garmy.core.config.get_user_agent", return_value="test-agent"),
-        ):
+        with patch(
+            "garmy.core.http_client.get_retryable_status_codes", return_value=[500]
+        ), patch("garmy.core.config.get_user_agent", return_value="test-agent"):
             client = BaseHTTPClient()
 
         # Should have adapters mounted
@@ -256,13 +248,9 @@ class TestBaseHTTPClient:
         mock_config.backoff_factor = 0.7
         mock_get_config.return_value = mock_config
 
-        with (
-            patch(
-                "garmy.core.http_client.get_retryable_status_codes",
-                return_value=[429, 500],
-            ),
-            patch("garmy.core.config.get_user_agent", return_value="test-agent"),
-        ):
+        with patch(
+            "garmy.core.http_client.get_retryable_status_codes", return_value=[429, 500]
+        ), patch("garmy.core.config.get_user_agent", return_value="test-agent"):
             client = BaseHTTPClient()
 
         # Get the adapter to check retry configuration
@@ -287,12 +275,9 @@ class TestBaseHTTPClientEdgeCases:
         mock_config.backoff_factor = 0.3
         mock_get_config.return_value = mock_config
 
-        with (
-            patch(
-                "garmy.core.http_client.get_retryable_status_codes", return_value=[500]
-            ),
-            patch("garmy.core.config.get_user_agent", return_value="test-agent"),
-        ):
+        with patch(
+            "garmy.core.http_client.get_retryable_status_codes", return_value=[500]
+        ), patch("garmy.core.config.get_user_agent", return_value="test-agent"):
             client = BaseHTTPClient(retries=0)
 
         # Should handle zero retries gracefully
@@ -340,12 +325,9 @@ class TestBaseHTTPClientEdgeCases:
         mock_config.backoff_factor = 0.3
         mock_get_config.return_value = mock_config
 
-        with (
-            patch(
-                "garmy.core.http_client.get_retryable_status_codes", return_value=[500]
-            ),
-            patch("garmy.core.config.get_user_agent", return_value="test-agent"),
-        ):
+        with patch(
+            "garmy.core.http_client.get_retryable_status_codes", return_value=[500]
+        ), patch("garmy.core.config.get_user_agent", return_value="test-agent"):
             # Test high retries
             client = BaseHTTPClient(retries=100)
             adapter = client.session.adapters["https://"]
@@ -390,16 +372,10 @@ class TestBaseHTTPClientIntegration:
         mock_config.backoff_factor = 0.4
         mock_get_config.return_value = mock_config
 
-        with (
-            patch(
-                "garmy.core.http_client.get_retryable_status_codes",
-                return_value=[429, 502, 503],
-            ),
-            patch(
-                "garmy.core.config.get_user_agent",
-                return_value="integration-agent",
-            ),
-        ):
+        with patch(
+            "garmy.core.http_client.get_retryable_status_codes",
+            return_value=[429, 502, 503],
+        ), patch("garmy.core.config.get_user_agent", return_value="integration-agent"):
             client = BaseHTTPClient(
                 domain="integration.test.com",
                 timeout=35,

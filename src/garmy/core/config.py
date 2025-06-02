@@ -165,7 +165,7 @@ class OAuthCredentials:
 
     # Consumer key from Authorization header, secret from S3 (both public)
     DEFAULT_CONSUMER_KEY = "fc3e99d2-118c-44b8-8ae3-03370dde24c0"
-    DEFAULT_CONSUMER_SECRET = "E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF"
+    DEFAULT_CONSUMER_SECRET = "E08WAR897WEy2knn7aFBrvegVAf0AFdWBBF"  # nosec B105
 
     # Dynamic endpoint for fresh credentials (requires authentication)
     DYNAMIC_CONSUMER_ENDPOINT = "/oauth-service/oauth/tokens/consumer"

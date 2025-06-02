@@ -148,7 +148,7 @@ class TestAnalysisTools:
         mock_mcp.tool = mock_tool
         self.analysis_tools.register_tools(mock_mcp)
 
-        result = await tool_functions["analyze_metric_trends"](
+        await tool_functions["analyze_metric_trends"](
             "steps", None, None, self.mock_ctx
         )
 

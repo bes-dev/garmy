@@ -11,6 +11,12 @@ from typing import Any, Dict, List, Optional, Union
 import anyio
 from fastmcp import FastMCP
 
+try:
+    from builtins import BaseExceptionGroup  # Python 3.11+
+except ImportError:
+    # Python < 3.11 compatibility
+    BaseExceptionGroup = Exception
+
 from .. import APIClient, AuthClient
 from ..core.discovery import MetricDiscovery
 from .config import MCPConfig
@@ -167,7 +173,7 @@ class GarmyMCPServer:
         Raises:
             ValueError: If metric name is not found.
         """
-        if metric_name not in self.api_client.metrics.keys():
+        if metric_name not in self.api_client.metrics:
             available = list(self.api_client.metrics.keys())
             raise ValueError(f"Unknown metric '{metric_name}'. Available: {available}")
 
@@ -287,16 +293,12 @@ class GarmyMCPServer:
             transport: Transport type ("stdio" or "streamable-http").
             **kwargs: Additional transport parameters.
         """
-        import sys
-
         # Only print debug info if explicitly in debug mode to avoid MCP protocol interference
         if self.config.debug_mode:
-            print("Starting Garmy MCP Server...", file=sys.stderr)
-            print(f"Transport: {transport}", file=sys.stderr)
-            print(
-                f"Discovered metrics: {len(self.discovered_metrics)}", file=sys.stderr
-            )
-            print("Server ready!", file=sys.stderr)
+            self._log_debug("Starting Garmy MCP Server...")
+            self._log_debug(f"Transport: {transport}")
+            self._log_debug(f"Discovered metrics: {len(self.discovered_metrics)}")
+            self._log_debug("Server ready!")
 
         try:
             self.mcp.run(transport=transport, **kwargs)
@@ -306,7 +308,7 @@ class GarmyMCPServer:
                 isinstance(exc, anyio.BrokenResourceError) for exc in eg.exceptions
             )
             if has_broken_resource and self.config.debug_mode:
-                print("MCP client disconnected (normal)", file=sys.stderr)
+                self._log_debug("MCP client disconnected (normal)")
             if not has_broken_resource:
                 # Only re-raise if there are serious errors, not just disconnections
                 self._log_error(
@@ -316,7 +318,7 @@ class GarmyMCPServer:
         except anyio.BrokenResourceError:
             # Normal client disconnection
             if self.config.debug_mode:
-                print("MCP client disconnected (normal)", file=sys.stderr)
+                self._log_debug("MCP client disconnected (normal)")
         except Exception as e:
             self._log_error(
                 f"Error running MCP server: {e}", e if self.config.debug_mode else None
@@ -330,12 +332,22 @@ class GarmyMCPServer:
             message: Error message to log.
             exception: Optional exception for traceback.
         """
+        # Use stderr for logging to avoid MCP protocol interference
         import sys
 
-        print(message, file=sys.stderr)
+        sys.stderr.write(f"{message}\n")
+        sys.stderr.flush()
         if exception and self.config.debug_mode:
             import traceback
 
             traceback.print_exception(
                 type(exception), exception, exception.__traceback__, file=sys.stderr
             )
+
+    def _log_debug(self, message: str) -> None:
+        """Log debug message to stderr if debug mode is enabled."""
+        if self.config.debug_mode:
+            import sys
+
+            sys.stderr.write(f"DEBUG: {message}\n")
+            sys.stderr.flush()

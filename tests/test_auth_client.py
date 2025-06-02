@@ -355,14 +355,11 @@ class TestTokenFileManager:
             manager.token_dir = temp_dir
 
             # Mock the _safe_load_token_file to raise PermissionError
-            with (
-                patch.object(
-                    manager,
-                    "_safe_load_token_file",
-                    side_effect=PermissionError("Permission denied"),
-                ),
-                pytest.raises(PermissionError),
-            ):
+            with patch.object(
+                manager,
+                "_safe_load_token_file",
+                side_effect=PermissionError("Permission denied"),
+            ), pytest.raises(PermissionError):
                 manager.load_tokens()
 
     @patch("pathlib.Path.mkdir")

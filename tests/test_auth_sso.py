@@ -38,13 +38,16 @@ class TestGarminOAuth1Session:
     @patch("requests.get")
     def test_oauth1_session_initialization_no_parent(self, mock_get):
         """Test GarminOAuth1Session initialization without parent session."""
-        mock_get.return_value.json.return_value = {
-            "consumer_key": "test_key",
-            "consumer_secret": "test_secret",
-        }
-
-        with patch("requests_oauthlib.OAuth1Session.__init__") as mock_oauth_init:
+        with patch(
+            "requests_oauthlib.OAuth1Session.__init__"
+        ) as mock_oauth_init, patch.object(
+            GarminOAuth1Session, "_get_oauth_consumer_safe"
+        ) as mock_get_credentials:
             mock_oauth_init.return_value = None
+            mock_get_credentials.return_value = {
+                "consumer_key": "test_key",
+                "consumer_secret": "test_secret",
+            }
 
             GarminOAuth1Session()
 
@@ -76,50 +79,52 @@ class TestGarminOAuth1Session:
     @patch("requests.get")
     def test_oauth1_session_consumer_cache(self, mock_get):
         """Test OAuth consumer credentials are cached."""
-        mock_get.return_value.json.return_value = {
-            "consumer_key": "test_key",
-            "consumer_secret": "test_secret",
-        }
-
-        # Test that caching mechanism exists
-        try:
-            session1 = GarminOAuth1Session()
-            # If we get here, the session was created successfully
-            assert session1 is not None
-        except Exception:
-            # OAuth1Session initialization might fail in test environment
-            # The important thing is that our caching logic is present
-            pass
-
-        # Verify the request was made to get consumer credentials
-        assert mock_get.called
-
-    def test_get_oauth_consumer_safe_caching(self):
-        """Test _get_oauth_consumer_safe caching mechanism."""
-        with patch("requests.get") as mock_get:
-            mock_get.return_value.json.return_value = {
+        with patch.object(
+            GarminOAuth1Session, "_get_oauth_consumer_safe"
+        ) as mock_get_credentials, patch(
+            "requests_oauthlib.OAuth1Session.__init__"
+        ) as mock_oauth_init:
+            mock_oauth_init.return_value = None
+            mock_get_credentials.return_value = {
                 "consumer_key": "test_key",
                 "consumer_secret": "test_secret",
             }
 
-            with patch("requests_oauthlib.OAuth1Session.__init__") as mock_oauth_init:
-                mock_oauth_init.return_value = None
+            # Test that caching mechanism exists
+            session1 = GarminOAuth1Session()
+            assert session1 is not None
 
-                session = GarminOAuth1Session()
+            # Verify credentials were fetched
+            assert mock_get_credentials.called
 
-                # Call _get_oauth_consumer_safe multiple times
-                result1 = session._get_oauth_consumer_safe()
-                result2 = session._get_oauth_consumer_safe()
+    def test_get_oauth_consumer_safe_caching(self):
+        """Test _get_oauth_consumer_safe caching mechanism."""
+        with patch(
+            "requests_oauthlib.OAuth1Session.__init__"
+        ) as mock_oauth_init, patch.object(
+            GarminOAuth1Session, "_fetch_consumer_credentials"
+        ) as mock_fetch:
+            mock_oauth_init.return_value = None
+            mock_fetch.return_value = {
+                "consumer_key": "test_key",
+                "consumer_secret": "test_secret",
+            }
 
-                # Should return same cached result
-                assert result1 == result2
-                assert result1 == {
-                    "consumer_key": "test_key",
-                    "consumer_secret": "test_secret",
-                }
+            session = GarminOAuth1Session()
 
-                # requests.get should only be called once
-                mock_get.assert_called_once()
+            # Call _get_oauth_consumer_safe multiple times
+            result1 = session._get_oauth_consumer_safe()
+            result2 = session._get_oauth_consumer_safe()
+
+            # Should return same cached result
+            assert result1 == result2
+            assert result1 == {
+                "consumer_key": "test_key",
+                "consumer_secret": "test_secret",
+            }
+
+            # _fetch_consumer_credentials should only be called once due to caching
+            assert mock_fetch.call_count == 1
 
 
 class TestUtilityFunctions:
@@ -814,18 +819,15 @@ class TestLogin:
         auth_client = Mock()
         auth_client.last_resp = None
 
-        with (
-            patch.multiple(
-                "garmy.auth.sso",
-                _setup_sso_urls=Mock(
-                    return_value=({"embed": "param"}, {"signin": "param"})
-                ),
-                make_request=Mock(),
-                get_csrf_token=Mock(return_value="csrf123"),
-                _perform_initial_login=Mock(return_value="Success"),
+        with patch.multiple(
+            "garmy.auth.sso",
+            _setup_sso_urls=Mock(
+                return_value=({"embed": "param"}, {"signin": "param"})
             ),
-            pytest.raises(LoginError, match="No response available"),
-        ):
+            make_request=Mock(),
+            get_csrf_token=Mock(return_value="csrf123"),
+            _perform_initial_login=Mock(return_value="Success"),
+        ), pytest.raises(LoginError, match="No response available"):
             login("email@test.com", "password", auth_client)
 
 

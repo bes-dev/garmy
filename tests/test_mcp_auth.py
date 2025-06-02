@@ -43,23 +43,25 @@ class TestAuthTools:
 
     def test_resolve_credentials_with_partial_credentials(self):
         """Test resolving credentials with only email provided."""
-        with patch.dict(
-            os.environ,
-            {"GARMIN_EMAIL": "env@example.com", "GARMIN_PASSWORD": "envpass"},
+        with (
+            patch.dict(
+                os.environ,
+                {"GARMIN_EMAIL": "env@example.com", "GARMIN_PASSWORD": "envpass"},
+            ),
+            patch("garmy.mcp.tools.auth.ConfigManager") as mock_config,
         ):
-            with patch("garmy.mcp.tools.auth.ConfigManager") as mock_config:
-                mock_config.get_garmin_credentials.return_value = (
-                    "env@example.com",
-                    "envpass",
-                )
+            mock_config.get_garmin_credentials.return_value = (
+                "env@example.com",
+                "envpass",
+            )
 
-                result_email, result_password, is_manual = (
-                    self.auth_tools._resolve_credentials("test@example.com", "")
-                )
+            result_email, result_password, is_manual = (
+                self.auth_tools._resolve_credentials("test@example.com", "")
+            )
 
-                assert result_email == "test@example.com"
-                assert result_password == "envpass"
-                assert is_manual is False
+            assert result_email == "test@example.com"
+            assert result_password == "envpass"
+            assert is_manual is False
 
     def test_resolve_credentials_from_environment(self):
         """Test resolving credentials from environment variables."""

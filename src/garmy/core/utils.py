@@ -284,7 +284,21 @@ class TimestampMixin:
         if not iso_string:
             return None
         try:
-            return datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
+            # Replace 'Z' with UTC timezone
+            iso_string = iso_string.replace("Z", "+00:00")
+
+            # Handle fractional seconds with single digit (e.g., ".0")
+            # fromisoformat expects microseconds (6 digits) after the dot
+            import re
+
+            # Match pattern like "T10:30:00.0" and pad to 6 digits
+            iso_string = re.sub(
+                r"(\d{2}:\d{2}:\d{2})\.(\d{1,6})",
+                lambda m: f"{m.group(1)}.{m.group(2).ljust(6, '0')}",
+                iso_string,
+            )
+
+            return datetime.fromisoformat(iso_string)
         except (ValueError, AttributeError):
             return None
 

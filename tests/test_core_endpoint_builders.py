@@ -574,13 +574,9 @@ class TestEndpointBuilderErrorHandling:
 
         builder = FailingBuilder()
 
-        with (
-            patch.object(builder, "get_user_id", return_value="user123"),
-            patch(
-                "garmy.core.endpoint_builders.format_date", return_value="2023-12-01"
-            ),
-            pytest.raises(ValueError, match="Build failed"),
-        ):
+        with patch.object(builder, "get_user_id", return_value="user123"), patch(
+            "garmy.core.endpoint_builders.format_date", return_value="2023-12-01"
+        ), pytest.raises(ValueError, match="Build failed"):
             builder.build(date.today(), Mock())
 
 
