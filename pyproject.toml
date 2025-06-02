@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "garmy"
-version = "1.0.0rc1"
+version = "1.0.0"
 description = "AI-powered Garmin Connect API library with MCP integration for health agents and data analysis"
 readme = "README.md"
 license = {text = "Apache-2.0"}
