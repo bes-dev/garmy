@@ -1,0 +1,263 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "garmy"
+version = "1.0.0"
+description = "AI-powered Garmin Connect API library with MCP integration for health agents and data analysis"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "bes-dev", email = "sergei.o.belousov@gmail.com"}
+]
+maintainers = [
+    {name = "bes-dev", email = "sergei.o.belousov@gmail.com"}
+]
+keywords = [
+    "garmin",
+    "connect",
+    "api",
+    "fitness",
+    "health",
+    "training",
+    "metrics",
+    "reverse-engineering",
+    "lightweight",
+    "modular",
+    "garth",
+    "mcp",
+    "ai-integration",
+    "type-safe"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Typing :: Typed"
+]
+requires-python = ">=3.8"
+dependencies = [
+    "requests>=2.28.0",
+    "requests-oauthlib>=1.3.0",
+    "aiohttp>=3.8.0",
+    "aiofiles>=22.0.0"
+]
+
+[project.optional-dependencies]
+mcp = [
+    "fastmcp>=2.0.0",
+    "click>=8.0.0"
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.20.0",
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "types-requests>=2.32.0",
+    "flake8>=5.0.0",
+    "flake8-docstrings>=1.6.0",
+    "flake8-type-checking>=2.4.0",
+    "flake8-bugbear>=23.0.0",
+    "flake8-simplify>=0.20.0",
+    "ruff>=0.1.0",
+    "bandit>=1.7.0",
+    "vulture>=2.7.0",
+    "pre-commit>=2.20.0",
+    "fastmcp[cli]>=2.0.0"
+]
+docs = [
+    "sphinx>=4.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=0.18.0"
+]
+examples = [
+    "rich>=12.0.0",
+    "click>=8.0.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/bes-dev/garmy"
+Documentation = "https://github.com/bes-dev/garmy/blob/master/README.md"
+Repository = "https://github.com/bes-dev/garmy.git"
+"Bug Tracker" = "https://github.com/bes-dev/garmy/issues"
+Changelog = "https://github.com/bes-dev/garmy/blob/master/CHANGELOG.md"
+
+[project.scripts]
+garmy-mcp = "garmy.mcp.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+garmy = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["garmy"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "requests_oauthlib.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--cov=garmy",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml"
+]
+markers = [
+    "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')"
+]
+
+[tool.coverage.run]
+source = ["src/garmy"]
+omit = [
+    "*/tests/*",
+    "*/test_*"
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:"
+]
+
+[tool.ruff]
+target-version = "py38"
+line-length = 88
+exclude = [
+    ".git",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "C",   # flake8-comprehensions
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "RUF", # Ruff-specific rules
+    "SIM", # flake8-simplify
+    "PTH", # flake8-use-pathlib
+    "PL",  # pylint
+    "A",   # flake8-builtins
+    "T20", # flake8-print
+    "PYI", # flake8-pyi
+    "TCH", # flake8-type-checking
+]
+ignore = [
+    "E501",   # line too long, handled by black
+    "B008",   # do not perform function calls in argument defaults
+    "PLR0913", # too many arguments to function call
+    "PLR0915", # too many statements in function
+    "PLR2004", # magic value used in comparison
+    "C901",   # too complex (allow complex functions in examples)
+    "PLR0912", # too many branches (allow in examples)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["T201", "PLR2004"]  # Allow print statements and magic values in tests
+"examples/*" = ["T201", "C901", "PLR0912"]  # Allow print statements and complexity in examples
+"src/garmy/core/discovery.py" = ["T201"]  # Allow prints in discovery module
+
+[tool.flake8]
+max-line-length = 100
+extend-ignore = [
+    "E203",  # whitespace before ':'
+    "E501",  # line too long
+    "W503",  # line break before binary operator
+]
+exclude = [
+    ".git",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    "build",
+    "dist",
+    ".venv",
+]
+max-complexity = 10
+docstring-convention = "google"
+
+[tool.bandit]
+exclude_dirs = ["tests", "examples"]
+skips = ["B101"]  # Skip assert_used test
+
+[tool.vulture]
+exclude = ["tests/", "examples/"]
+ignore_decorators = ["@app.route", "@require_*"]
+ignore_names = ["__version__", "__author__"]
+min_confidence = 80

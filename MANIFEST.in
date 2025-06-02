@@ -1,0 +1,24 @@
+# Include documentation files
+include README.md
+include ARCHITECTURE.md
+include INSTALL.md
+include LICENSE
+include CHANGELOG.md
+
+# Include package data
+include src/garpy/py.typed
+
+# Include requirements
+include requirements.txt
+
+# Include examples
+recursive-include examples *.py
+
+# Include tests
+recursive-include tests *.py
+
+# Exclude build artifacts
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude *.egg-info

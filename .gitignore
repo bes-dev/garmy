@@ -192,3 +192,25 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# Garmy specific
+config.json
+auth_tokens.json
+garmin_session.json
+.garmy/
+logs/
+credentials.json
+
+# Temporary files and reports
+*_REPORT.md
+*_SUMMARY.md
+*_FIX.md
+debug_*.py
+analyze.sh
+log.txt
+
+# Test artifacts
+*.broken
+test_*coverage*.py
+test_remaining*.py
+test_final*.py
