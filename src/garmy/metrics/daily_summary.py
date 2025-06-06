@@ -182,29 +182,29 @@ class DailySummary(TimestampMixin):
     user_floors_ascended_goal: int = 0
 
     # Calories
-    total_kilocalories: int = 0
-    active_kilocalories: int = 0
-    bmr_kilocalories: int = 0
-    wellness_kilocalories: int = 0
-    wellness_active_kilocalories: int = 0
+    total_kilocalories: Optional[int] = None
+    active_kilocalories: Optional[int] = None
+    bmr_kilocalories: Optional[int] = None
+    wellness_kilocalories: Optional[int] = None
+    wellness_active_kilocalories: Optional[int] = None
     burned_kilocalories: Optional[int] = None
     consumed_kilocalories: Optional[int] = None
     remaining_kilocalories: Optional[int] = None
-    net_remaining_kilocalories: int = 0
+    net_remaining_kilocalories: Optional[int] = None
     net_calorie_goal: Optional[int] = None
 
     # Heart Rate
-    min_heart_rate: int = 0
-    max_heart_rate: int = 0
-    resting_heart_rate: int = 0
-    last_seven_days_avg_resting_heart_rate: int = 0
-    min_avg_heart_rate: int = 0
-    max_avg_heart_rate: int = 0
+    min_heart_rate: Optional[int] = None
+    max_heart_rate: Optional[int] = None
+    resting_heart_rate: Optional[int] = None
+    last_seven_days_avg_resting_heart_rate: Optional[int] = None
+    min_avg_heart_rate: Optional[int] = None
+    max_avg_heart_rate: Optional[int] = None
     abnormal_heart_rate_alerts_count: Optional[int] = None
 
     # Stress
-    average_stress_level: int = 0
-    max_stress_level: int = 0
+    average_stress_level: Optional[int] = None
+    max_stress_level: Optional[int] = None
     stress_duration: int = 0
     rest_stress_duration: int = 0
     activity_stress_duration: int = 0
@@ -223,27 +223,27 @@ class DailySummary(TimestampMixin):
     stress_qualifier: str = ""
 
     # Body Battery
-    body_battery_charged_value: int = 0
-    body_battery_drained_value: int = 0
-    body_battery_highest_value: int = 0
-    body_battery_lowest_value: int = 0
-    body_battery_most_recent_value: int = 0
-    body_battery_during_sleep: int = 0
-    body_battery_at_wake_time: int = 0
-    body_battery_version: int = 0
+    body_battery_charged_value: Optional[int] = None
+    body_battery_drained_value: Optional[int] = None
+    body_battery_highest_value: Optional[int] = None
+    body_battery_lowest_value: Optional[int] = None
+    body_battery_most_recent_value: Optional[int] = None
+    body_battery_during_sleep: Optional[int] = None
+    body_battery_at_wake_time: Optional[int] = None
+    body_battery_version: Optional[int] = None
 
     # SpO2
-    average_spo2: int = 0
-    lowest_spo2: int = 0
-    latest_spo2: int = 0
+    average_spo2: Optional[int] = None
+    lowest_spo2: Optional[int] = None
+    latest_spo2: Optional[int] = None
     latest_spo2_reading_time_gmt: str = ""
     latest_spo2_reading_time_local: str = ""
 
     # Respiration
-    avg_waking_respiration_value: int = 0
-    highest_respiration_value: int = 0
-    lowest_respiration_value: int = 0
-    latest_respiration_value: int = 0
+    avg_waking_respiration_value: Optional[int] = None
+    highest_respiration_value: Optional[int] = None
+    lowest_respiration_value: Optional[int] = None
+    latest_respiration_value: Optional[int] = None
     latest_respiration_time_gmt: str = ""
     respiration_algorithm_version: int = 0
 
@@ -310,14 +310,14 @@ class DailySummary(TimestampMixin):
     @property
     def activity_efficiency(self) -> float:
         """Calculate percentage of calories from active vs total."""
-        if self.total_kilocalories > 0:
+        if self.total_kilocalories is not None and self.total_kilocalories > 0 and self.active_kilocalories is not None:
             return (self.active_kilocalories / self.total_kilocalories) * 100
         return 0.0
 
     @property
     def bmr_percentage(self) -> float:
         """Calculate percentage of calories from BMR vs total."""
-        if self.total_kilocalories > 0:
+        if self.total_kilocalories is not None and self.total_kilocalories > 0 and self.bmr_kilocalories is not None:
             return (self.bmr_kilocalories / self.total_kilocalories) * 100
         return 0.0
 
@@ -325,17 +325,23 @@ class DailySummary(TimestampMixin):
     @property
     def heart_rate_range(self) -> int:
         """Get heart rate range (max - min)."""
+        if self.max_heart_rate is None or self.min_heart_rate is None:
+            return 0
         return self.max_heart_rate - self.min_heart_rate
 
     @property
     def resting_hr_trend(self) -> int:
         """Get resting heart rate trend vs 7-day average."""
+        if self.resting_heart_rate is None or self.last_seven_days_avg_resting_heart_rate is None:
+            return 0
         return self.resting_heart_rate - self.last_seven_days_avg_resting_heart_rate
 
     # Stress convenience properties
     @property
     def stress_range(self) -> int:
         """Get stress range (max - average)."""
+        if self.max_stress_level is None or self.average_stress_level is None:
+            return 0
         return self.max_stress_level - self.average_stress_level
 
     @property
@@ -347,23 +353,31 @@ class DailySummary(TimestampMixin):
     @property
     def body_battery_range(self) -> int:
         """Get body battery range (highest - lowest)."""
+        if self.body_battery_highest_value is None or self.body_battery_lowest_value is None:
+            return 0
         return self.body_battery_highest_value - self.body_battery_lowest_value
 
     @property
     def net_body_battery_change(self) -> int:
         """Get net body battery change (charged - drained)."""
+        if self.body_battery_charged_value is None or self.body_battery_drained_value is None:
+            return 0
         return self.body_battery_charged_value - self.body_battery_drained_value
 
     # SpO2 convenience properties
     @property
     def spo2_range(self) -> int:
         """Get SpO2 range (average - lowest)."""
+        if self.average_spo2 is None or self.lowest_spo2 is None:
+            return 0
         return self.average_spo2 - self.lowest_spo2
 
     # Respiration convenience properties
     @property
     def respiration_range(self) -> int:
         """Get respiration range (highest - lowest)."""
+        if self.highest_respiration_value is None or self.lowest_respiration_value is None:
+            return 0
         return self.highest_respiration_value - self.lowest_respiration_value
 
     # Sleep convenience properties
