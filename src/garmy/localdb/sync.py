@@ -1,555 +1,577 @@
-"""Data synchronization engine with crash recovery."""
+"""Data synchronization manager."""
 
 import asyncio
 import logging
-from dataclasses import dataclass, field, asdict, is_dataclass
-from datetime import datetime, date, timedelta
-from enum import Enum
-from typing import Any, Dict, List, Optional, Callable, Set
-import time
-import traceback
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional, Callable
+from dataclasses import dataclass
 
-from ..core.client import APIClient
-from ..core.exceptions import GarmyError
-from .config import SyncConfig
-from .exceptions import SyncError, SyncInterruptedError
 from .storage import LocalDataStore
-
-
-class SyncStatus(Enum):
-    """Sync operation status."""
-    PENDING = "pending"
-    RUNNING = "running"
-    PAUSED = "paused"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    INTERRUPTED = "interrupted"
+from ..core.client import APIClient
 
 
 @dataclass
 class SyncProgress:
-    """Progress information for sync operation."""
-    
+    """Sync operation progress."""
     sync_id: str
     user_id: str
-    status: SyncStatus
+    status: str  # 'running', 'completed', 'failed', 'paused'
+    current_metric: str
+    current_date: str
     total_metrics: int
     completed_metrics: int
-    total_days: int
-    completed_days: int
-    current_metric: Optional[str] = None
-    current_date: Optional[str] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
+    total_dates: int
+    completed_dates: int
+    start_time: datetime
+    end_time: Optional[datetime] = None
     error_message: Optional[str] = None
-    retry_count: int = 0
-    estimated_completion: Optional[datetime] = None
     
     @property
     def progress_percentage(self) -> float:
-        """Calculate overall progress percentage."""
-        if self.total_days == 0:
+        """Calculate overall progress percentage (day-by-day approach)."""
+        if self.total_dates == 0 or self.total_metrics == 0:
             return 0.0
-        return (self.completed_days / self.total_days) * 100
+        
+        # Progress based on total operations (days * metrics)
+        total_operations = self.total_dates * self.total_metrics
+        if total_operations == 0:
+            return 0.0
+            
+        # Use completed_metrics which now tracks total operations
+        return (self.completed_metrics / total_operations) * 100
     
     @property
-    def metric_progress_percentage(self) -> float:
-        """Calculate metric progress percentage."""
-        if self.total_metrics == 0:
-            return 0.0
-        return (self.completed_metrics / self.total_metrics) * 100
-    
-    @property
-    def elapsed_time(self) -> Optional[timedelta]:
-        """Calculate elapsed time."""
-        if self.started_at is None:
-            return None
-        end_time = self.completed_at or datetime.now()
-        return end_time - self.started_at
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for storage."""
-        return {
-            "sync_id": self.sync_id,
-            "user_id": self.user_id,
-            "status": self.status.value,
-            "total_metrics": self.total_metrics,
-            "completed_metrics": self.completed_metrics,
-            "total_days": self.total_days,
-            "completed_days": self.completed_days,
-            "current_metric": self.current_metric,
-            "current_date": self.current_date,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "error_message": self.error_message,
-            "retry_count": self.retry_count,
-            "estimated_completion": self.estimated_completion.isoformat() if self.estimated_completion else None,
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SyncProgress":
-        """Create from dictionary."""
-        return cls(
-            sync_id=data["sync_id"],
-            user_id=data["user_id"],
-            status=SyncStatus(data["status"]),
-            total_metrics=data["total_metrics"],
-            completed_metrics=data["completed_metrics"],
-            total_days=data["total_days"],
-            completed_days=data["completed_days"],
-            current_metric=data.get("current_metric"),
-            current_date=data.get("current_date"),
-            started_at=datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None,
-            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
-            error_message=data.get("error_message"),
-            retry_count=data.get("retry_count", 0),
-            estimated_completion=datetime.fromisoformat(data["estimated_completion"]) if data.get("estimated_completion") else None,
-        )
-
-
-@dataclass
-class SyncCheckpoint:
-    """Checkpoint data for crash recovery."""
-    
-    sync_id: str
-    user_id: str
-    completed_dates: Set[str] = field(default_factory=set)  # set of completed date strings
-    failed_attempts: Dict[str, int] = field(default_factory=dict)  # "metric:date" -> attempt count
-    last_checkpoint: datetime = field(default_factory=datetime.now)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for storage."""
-        return {
-            "sync_id": self.sync_id,
-            "user_id": self.user_id,
-            "completed_dates": list(self.completed_dates),
-            "failed_attempts": self.failed_attempts,
-            "last_checkpoint": self.last_checkpoint.isoformat(),
-        }
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SyncCheckpoint":
-        """Create from dictionary."""
-        return cls(
-            sync_id=data["sync_id"],
-            user_id=data["user_id"],
-            completed_dates=set(data.get("completed_dates", [])),
-            failed_attempts=data.get("failed_attempts", {}),
-            last_checkpoint=datetime.fromisoformat(data["last_checkpoint"]),
-        )
-
-
-def _convert_to_dict(obj: Any) -> Any:
-    """Convert dataclass objects to dictionaries recursively."""
-    if is_dataclass(obj) and not isinstance(obj, type):
-        return asdict(obj)
-    elif isinstance(obj, dict):
-        return {key: _convert_to_dict(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [_convert_to_dict(item) for item in obj]
-    elif isinstance(obj, tuple):
-        return tuple(_convert_to_dict(item) for item in obj)
-    elif isinstance(obj, (datetime, date)):
-        return obj.isoformat()
-    else:
-        return obj
+    def elapsed_time(self) -> timedelta:
+        """Get elapsed time."""
+        end = self.end_time or datetime.utcnow()
+        return end - self.start_time
 
 
 class SyncManager:
-    """Manages data synchronization with crash recovery."""
+    """Manages data synchronization between Garmin API and local database."""
     
-    def __init__(
-        self, 
-        api_client: APIClient, 
-        storage: LocalDataStore,
-        max_workers: int = 4,
-        checkpoint_interval: int = 60,  # seconds
-    ) -> None:
+    def __init__(self, api_client: APIClient, storage: LocalDataStore, user_id: str):
         self.api_client = api_client
         self.storage = storage
-        self.max_workers = max_workers
-        self.checkpoint_interval = checkpoint_interval
+        self.user_id = user_id
         self.logger = logging.getLogger(__name__)
-        
-        # Active sync tracking
         self._active_syncs: Dict[str, SyncProgress] = {}
-        self._sync_tasks: Dict[str, asyncio.Task] = {}
-        self._progress_callbacks: List[Callable[[SyncProgress], None]] = []
-        self._stop_flags: Dict[str, bool] = {}
+        self._existing_data_cache: Dict[str, set] = {}  # Cache existing dates per metric
     
-    def add_progress_callback(self, callback: Callable[[SyncProgress], None]) -> None:
-        """Add callback for progress updates."""
-        self._progress_callbacks.append(callback)
-    
-    def remove_progress_callback(self, callback: Callable[[SyncProgress], None]) -> None:
-        """Remove progress callback."""
-        if callback in self._progress_callbacks:
-            self._progress_callbacks.remove(callback)
-    
-    def _notify_progress(self, progress: SyncProgress) -> None:
-        """Notify all callbacks of progress update."""
-        for callback in self._progress_callbacks:
-            try:
-                callback(progress)
-            except Exception as e:
-                self.logger.warning(f"Progress callback failed: {e}")
-    
-    async def start_sync(self, config: SyncConfig, resume: bool = True) -> str:
-        """Start data synchronization."""
-        sync_id = LocalDataStore.generate_sync_id()
+    def _get_available_metrics(self) -> List[str]:
+        """Get all available metrics using auto-discovery."""
+        try:
+            if hasattr(self.api_client, 'metrics'):
+                # Get ALL metrics from garmy's auto-discovery
+                all_metrics = list(self.api_client.metrics.keys())
+                
+                self.logger.info(f"Auto-discovered {len(all_metrics)} metrics: {', '.join(all_metrics)}")
+                
+                return all_metrics
+            else:
+                # Fallback if metrics discovery fails
+                fallback_metrics = ['steps', 'heart_rate', 'sleep', 'body_battery']
+                self.logger.warning("API client doesn't have metrics discovery, using fallback metrics")
+                return fallback_metrics
         
-        # Check for existing interrupted sync
-        if resume:
-            existing_sync = await self._find_interrupted_sync(config.user_id)
-            if existing_sync:
-                sync_id = existing_sync
-                self.logger.info(f"Resuming interrupted sync {sync_id}")
+        except Exception as e:
+            self.logger.error(f"Error discovering metrics: {e}")
+            # Use minimal safe set as fallback
+            return ['steps', 'heart_rate', 'sleep']
+
+    def _build_existing_data_cache(self, start_date: date, end_date: date) -> List[str]:
+        """Build cache of existing data for efficient skip checks. Returns available metrics."""
+        self._existing_data_cache.clear()
         
-        # Create progress tracker
-        progress = await self._initialize_sync_progress(sync_id, config)
+        # Get all available metrics using auto-discovery
+        available_metrics = self._get_available_metrics()
+        
+        if not available_metrics:
+            self.logger.warning("No available metrics found for synchronization")
+            return []
+        
+        for metric_type in available_metrics:
+            # Single query to get ALL existing dates for this metric in the range
+            existing_dates = self.storage.list_metric_dates(
+                self.user_id, metric_type, start_date, end_date
+            )
+            # Convert to set of date objects for O(1) lookup
+            self._existing_data_cache[metric_type] = {
+                datetime.strptime(date_str, "%Y-%m-%d").date() 
+                for date_str in existing_dates
+            }
+            self.logger.debug(f"Cached {len(existing_dates)} existing dates for {metric_type}")
+        
+        return available_metrics
+    
+    def _should_skip_date(self, metric_type: str, sync_date: date) -> bool:
+        """Check if date should be skipped (O(1) lookup)."""
+        return sync_date in self._existing_data_cache.get(metric_type, set())
+    
+    def get_sync_efficiency_stats(self, start_date: date, end_date: date) -> Dict[str, Any]:
+        """Get statistics about sync efficiency without actually syncing."""
+        available_metrics = self._build_existing_data_cache(start_date, end_date)
+        
+        if not available_metrics:
+            return {
+                'error': 'No available metrics found for synchronization',
+                'suggestion': 'Check API client authentication and connectivity'
+            }
+        
+        # Calculate date range
+        total_days = (end_date - start_date).days + 1
+        total_operations = total_days * len(available_metrics)
+        
+        # Count existing data
+        existing_operations = 0
+        missing_operations = 0
+        
+        current_date = start_date
+        while current_date <= end_date:
+            for metric_type in available_metrics:
+                if self._should_skip_date(metric_type, current_date):
+                    existing_operations += 1
+                else:
+                    missing_operations += 1
+            current_date += timedelta(days=1)
+        
+        efficiency_percentage = (existing_operations / total_operations) * 100 if total_operations > 0 else 0
+        
+        return {
+            'total_operations': total_operations,
+            'existing_operations': existing_operations,
+            'missing_operations': missing_operations,
+            'skip_efficiency': round(efficiency_percentage, 1),
+            'api_calls_saved': existing_operations,
+            'api_calls_needed': missing_operations,
+            'date_range': {
+                'start': start_date.isoformat(),
+                'end': end_date.isoformat(),
+                'days': total_days
+            },
+            'metrics': {
+                metric_type: len(self._existing_data_cache.get(metric_type, set()))
+                for metric_type in available_metrics
+            },
+            'available_metrics': available_metrics
+        }
+
+    async def sync_all_metrics(self, start_date: date, end_date: date, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Sync ALL available metrics for a date range using day-by-day strategy."""
+        sync_id = f"{self.user_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Build cache of existing data for efficient skip checks and get available metrics
+        all_available_metrics = self._build_existing_data_cache(start_date, end_date)
+        
+        # Exclude activities from regular metrics sync (activities are handled separately)
+        available_metrics = [m for m in all_available_metrics if m != 'activities']
+        
+        if not available_metrics:
+            return {
+                'error': 'No available metrics found for synchronization',
+                'suggestion': 'Check API client authentication and connectivity'
+            }
+        
+        # Calculate date range (newest to oldest)
+        date_range = []
+        current_date = end_date
+        while current_date >= start_date:
+            date_range.append(current_date)
+            current_date -= timedelta(days=1)
+        
+        # Initialize progress
+        progress = SyncProgress(
+            sync_id=sync_id,
+            user_id=self.user_id,
+            status='running',
+            current_metric='',
+            current_date='',
+            total_metrics=len(available_metrics),
+            completed_metrics=0,
+            total_dates=len(date_range),
+            completed_dates=0,
+            start_time=datetime.utcnow()
+        )
+        
         self._active_syncs[sync_id] = progress
-        self._stop_flags[sync_id] = False
         
-        # Start sync task with error handling
-        task = asyncio.create_task(self._run_sync_with_error_handling(sync_id, config))
-        self._sync_tasks[sync_id] = task
+        try:
+            results = {
+                'sync_id': sync_id,
+                'metrics_synced': {metric: {'records_synced': 0, 'records_updated': 0, 'records_skipped': 0, 'errors': []} for metric in available_metrics},
+                'total_records': 0,
+                'errors': [],
+                'available_metrics': available_metrics
+            }
+            
+            # Sync day by day (newest to oldest)
+            for date_idx, sync_date in enumerate(date_range):
+                progress.current_date = sync_date.isoformat()
+                
+                self.logger.info(f"Syncing all metrics for {sync_date}")
+                
+                # Sync all metrics for this date
+                for metric_idx, metric_type in enumerate(available_metrics):
+                    progress.current_metric = metric_type
+                    
+                    # Calculate overall progress: (completed_days * total_metrics + current_metric) / (total_days * total_metrics)
+                    total_operations = len(date_range) * len(available_metrics)
+                    completed_operations = date_idx * len(available_metrics) + metric_idx
+                    progress.completed_dates = date_idx
+                    progress.completed_metrics = completed_operations
+                    
+                    if progress_callback:
+                        progress_callback(progress)
+                    
+                    try:
+                        # Check if we should skip this date (O(1) lookup)
+                        if self._should_skip_date(metric_type, sync_date):
+                            results['metrics_synced'][metric_type]['records_skipped'] += 1
+                            self.logger.debug(f"Skipping {metric_type} for {sync_date} - already exists")
+                            continue
+                        
+                        # Get metric accessor
+                        if not hasattr(self.api_client, 'metrics'):
+                            raise ValueError("API client doesn't have metrics attribute")
+                        
+                        metric_accessor = self.api_client.metrics.get(metric_type)
+                        if not metric_accessor:
+                            self.logger.warning(f"Metric accessor for '{metric_type}' not found")
+                            continue
+                        
+                        # Fetch new data from API (only if not skipped)
+                        api_data = await self._fetch_metric_data(metric_accessor, sync_date)
+                        
+                        if api_data:
+                            try:
+                                # Store the data
+                                self.storage.store_metric(self.user_id, metric_type, sync_date, api_data)
+                                
+                                # Since we skipped existing data, this is always a new record
+                                results['metrics_synced'][metric_type]['records_synced'] += 1
+                                results['total_records'] += 1
+                                
+                                # Update cache to avoid re-fetching this date in same session
+                                if metric_type not in self._existing_data_cache:
+                                    self._existing_data_cache[metric_type] = set()
+                                self._existing_data_cache[metric_type].add(sync_date)
+                                
+                            except Exception as store_error:
+                                error_msg = f"Error storing {metric_type} for {sync_date}: {store_error}"
+                                results['metrics_synced'][metric_type]['errors'].append(error_msg)
+                                results['errors'].append(error_msg)
+                                self.logger.warning(error_msg)
+                                results['metrics_synced'][metric_type]['records_skipped'] += 1
+                        else:
+                            results['metrics_synced'][metric_type]['records_skipped'] += 1
+                            self.logger.debug(f"No {metric_type} data for {sync_date}")
+                    
+                    except Exception as e:
+                        error_msg = f"Error syncing {metric_type} for {sync_date}: {e}"
+                        results['metrics_synced'][metric_type]['errors'].append(error_msg)
+                        results['errors'].append(error_msg)
+                        self.logger.warning(error_msg)
+                    
+                    # Update progress after processing metric
+                    progress.completed_metrics = date_idx * len(available_metrics) + metric_idx + 1
+                    if progress_callback:
+                        progress_callback(progress)
+                
+                # Small delay between days to avoid overwhelming the API
+                await asyncio.sleep(0.2)
+            
+            progress.completed_dates = len(date_range)
+            progress.status = 'completed'
+            progress.end_time = datetime.utcnow()
+            
+            # Update user's last sync time
+            self.storage.update_last_sync(self.user_id)
+            
+            return results
         
-        return sync_id
-    
-    async def pause_sync(self, sync_id: str) -> None:
-        """Pause a running sync operation."""
-        if sync_id in self._active_syncs:
-            progress = self._active_syncs[sync_id]
-            if progress.status == SyncStatus.RUNNING:
-                progress.status = SyncStatus.PAUSED
-                self._stop_flags[sync_id] = True
-                await self._update_progress(progress)
-    
-    async def resume_sync(self, sync_id: str) -> None:
-        """Resume a paused sync operation."""
-        if sync_id in self._active_syncs:
-            progress = self._active_syncs[sync_id]
-            if progress.status == SyncStatus.PAUSED:
-                progress.status = SyncStatus.RUNNING
-                self._stop_flags[sync_id] = False
-                await self._update_progress(progress)
-    
-    async def stop_sync(self, sync_id: str) -> None:
-        """Stop a sync operation."""
-        self._stop_flags[sync_id] = True
+        except Exception as e:
+            progress.status = 'failed'
+            progress.error_message = str(e)
+            progress.end_time = datetime.utcnow()
+            self.logger.error(f"Sync failed for user {self.user_id}: {e}")
+            raise
         
-        if sync_id in self._sync_tasks:
-            task = self._sync_tasks[sync_id]
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+        finally:
+            if progress_callback:
+                progress_callback(progress)
+    
+    
+    async def _fetch_metric_data(self, metric_accessor, sync_date: date) -> Optional[Any]:
+        """Fetch data for a specific date from metric accessor."""
+        try:
+            # Convert date to string format expected by API
+            date_str = sync_date.isoformat()
+            
+            # Try to get data for specific date
+            # Most metric accessors support .get(date_string)
+            data = metric_accessor.get(date_str)
+            
+            # Handle different return types
+            if hasattr(data, 'daily_steps') and data.daily_steps:
+                # Steps data - return the daily data for this specific date
+                for daily_step in data.daily_steps:
+                    if daily_step.calendar_date == date_str:
+                        return daily_step
+                return None
+            
+            elif hasattr(data, 'heart_rate_summary'):
+                # Heart rate data
+                return data.heart_rate_summary
+            
+            elif hasattr(data, 'sleep_summary'):
+                # Sleep data
+                return data.sleep_summary
+            
+            
+            elif hasattr(data, 'body_battery_readings'):
+                # Body battery data - need to transform to summary
+                if not data.body_battery_readings:
+                    return None
+                
+                readings = data.body_battery_readings
+                levels = [r.level for r in readings]
+                
+                # Create summary object with proper charging/draining analysis
+                from dataclasses import dataclass
+                
+                @dataclass
+                class BodyBatterySummary:
+                    calendar_date: str
+                    start_level: int
+                    end_level: int
+                    highest_level: int
+                    lowest_level: int
+                    net_change: int
+                    charging_periods_count: int
+                    draining_periods_count: int
+                    total_readings: int
+                    readings_json: str
+                
+                # Analyze charging vs draining periods
+                charging_count = 0
+                draining_count = 0
+                
+                for reading in readings:
+                    status = str(getattr(reading, 'status', '')).lower()
+                    if 'charg' in status:
+                        charging_count += 1
+                    else:
+                        draining_count += 1
+                
+                return BodyBatterySummary(
+                    calendar_date=date_str,
+                    start_level=readings[0].level,
+                    end_level=readings[-1].level,
+                    highest_level=max(levels),
+                    lowest_level=min(levels),
+                    net_change=readings[-1].level - readings[0].level,
+                    charging_periods_count=charging_count,
+                    draining_periods_count=draining_count,
+                    total_readings=len(readings),
+                    readings_json=str([{
+                        'timestamp': r.datetime.isoformat() if hasattr(r, 'datetime') else '',
+                        'level': r.level,
+                        'status': str(getattr(r, 'status', ''))
+                    } for r in readings])
+                )
+            
+            else:
+                # Direct data return
+                return data
+        
+        except Exception as e:
+            self.logger.warning(f"Failed to fetch {metric_accessor} data for {sync_date}: {e}")
+            return None
     
     def get_sync_progress(self, sync_id: str) -> Optional[SyncProgress]:
-        """Get current sync progress."""
-        if sync_id in self._active_syncs:
-            return self._active_syncs[sync_id]
-        
-        # Try loading from storage - need to iterate through all users
-        for user_config in self.storage.list_users():
-            status_data = self.storage.get_sync_status(user_config.user_id, sync_id)
-            if status_data:
-                return SyncProgress.from_dict(status_data)
-        
-        return None
+        """Get progress of a sync operation."""
+        return self._active_syncs.get(sync_id)
     
     def list_active_syncs(self) -> List[SyncProgress]:
         """List all active sync operations."""
         return list(self._active_syncs.values())
     
-    async def _find_interrupted_sync(self, user_id: str) -> Optional[str]:
-        """Find interrupted sync for user."""
-        # This would iterate through sync status records to find interrupted syncs
-        # For now, return None - this can be enhanced later
-        return None
+    def cancel_sync(self, sync_id: str) -> bool:
+        """Cancel a sync operation."""
+        if sync_id in self._active_syncs:
+            progress = self._active_syncs[sync_id]
+            progress.status = 'cancelled'
+            progress.end_time = datetime.utcnow()
+            return True
+        return False
     
-    async def _initialize_sync_progress(self, sync_id: str, config: SyncConfig) -> SyncProgress:
-        """Initialize sync progress tracking."""
-        # Calculate total work
-        start_date = config.start_date
-        end_date = config.end_date
-        total_days = (end_date - start_date).days + 1
-        total_metrics = len(config.metrics)
+    async def sync_with_activities(self, start_date: date, end_date: date, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Sync ALL available metrics including activities."""
+        self.logger.info(f"Starting full sync (metrics + activities) from {start_date} to {end_date}")
         
-        # Check for existing checkpoint
-        checkpoint_data = self.storage.get_sync_checkpoint(config.user_id, sync_id)
-        completed_days = 0
+        # Sync regular metrics first
+        result = await self.sync_all_metrics(start_date, end_date, progress_callback)
         
-        if checkpoint_data:
-            checkpoint = SyncCheckpoint.from_dict(checkpoint_data["checkpoint"])
-            completed_days = len(checkpoint.completed_dates)
-        
-        progress = SyncProgress(
-            sync_id=sync_id,
-            user_id=config.user_id,
-            status=SyncStatus.PENDING,
-            total_metrics=total_metrics,
-            completed_metrics=0,  # Not tracking by metrics anymore
-            total_days=total_days,
-            completed_days=completed_days,
-            started_at=datetime.now(),
-        )
-        
-        await self._update_progress(progress)
-        return progress
-    
-    async def _run_sync_with_error_handling(self, sync_id: str, config: SyncConfig) -> None:
-        """Wrapper around _run_sync with guaranteed error handling."""
-        try:
-            await self._run_sync(sync_id, config)
-        except Exception as e:
-            # Guaranteed fallback error handling
-            self.logger.error(f"Unexpected error in sync {sync_id}: {e}", exc_info=True)
+        # Check if activities are available and sync them separately
+        available_metrics = self._get_available_metrics()
+        if 'activities' in available_metrics:
+            self.logger.info("Starting activities sync with pagination")
+            activities_result = await self.sync_activities(start_date, end_date, progress_callback)
             
-            # Ensure progress status is updated
-            if sync_id in self._active_syncs:
-                progress = self._active_syncs[sync_id]
-                progress.status = SyncStatus.FAILED
-                progress.error_message = f"Unexpected error: {str(e)}"
-                progress.completed_at = datetime.now()
-                await self._update_progress(progress)
-            
-            # Clean up
-            if sync_id in self._active_syncs:
-                del self._active_syncs[sync_id]
-            if sync_id in self._sync_tasks:
-                del self._sync_tasks[sync_id]
-            if sync_id in self._stop_flags:
-                del self._stop_flags[sync_id]
+            # Merge results
+            if 'metrics_synced' in result:
+                result['metrics_synced']['activities'] = activities_result
+                result['total_records'] += activities_result.get('records_synced', 0)
+                if activities_result.get('errors'):
+                    result['errors'].extend(activities_result['errors'])
+            else:
+                # If main sync failed, just return activities result
+                result = {
+                    'sync_id': f"{self.user_id}_activities_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+                    'metrics_synced': {'activities': activities_result},
+                    'total_records': activities_result.get('records_synced', 0),
+                    'errors': activities_result.get('errors', []),
+                    'available_metrics': ['activities']
+                }
+        
+        return result
     
-    async def _run_sync(self, sync_id: str, config: SyncConfig) -> None:
-        """Run the synchronization process."""
-        self.logger.info(f"Starting sync {sync_id} for user {config.user_id}")
-        progress = self._active_syncs[sync_id]
-        checkpoint = await self._load_or_create_checkpoint(sync_id, config)
-        self.logger.info(f"Loaded checkpoint for sync {sync_id}: {len(checkpoint.completed_dates)} completed dates")
+    async def sync_recent_data(self, days: int = 30, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Sync recent data for all available metrics."""
+        end_date = date.today()
+        start_date = end_date - timedelta(days=days-1)
+        
+        self.logger.info(f"Starting recent data sync for last {days} days")
+        return await self.sync_with_activities(start_date, end_date, progress_callback)
+    
+    def _build_existing_activities_cache(self, start_date: date, end_date: date) -> set:
+        """Build cache of existing activity IDs for efficient skip checks."""
+        # Get all activities in date range and extract activity_ids
+        activities = self.storage.get_activities_for_date_range(self.user_id, start_date, end_date)
+        activity_ids = {activity.activity_id for activity in activities}
+        self.logger.debug(f"Cached {len(activity_ids)} existing activity IDs")
+        return activity_ids
+
+    async def sync_activities(self, start_date: date, end_date: date, progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+        """Sync activities using pagination with date filtering."""
+        result = {
+            'records_synced': 0,
+            'records_updated': 0,
+            'records_skipped': 0,
+            'errors': []
+        }
         
         try:
-            progress.status = SyncStatus.RUNNING
-            await self._update_progress(progress)
-            self.logger.info(f"Sync {sync_id} status updated to RUNNING")
+            # Build cache of existing activity IDs for efficient skip checks
+            existing_activity_ids = self._build_existing_activities_cache(start_date, end_date)
             
-            # Generate date range
-            current_date = config.start_date
-            dates = []
-            while current_date <= config.end_date:
-                dates.append(current_date)
-                current_date += timedelta(days=1)
+            # Get activities accessor
+            if not hasattr(self.api_client, 'metrics'):
+                result['errors'].append("API client doesn't have metrics attribute")
+                return result
             
-            # Reverse order if configured (newest first - default behavior)
-            if config.reverse_chronological:
-                dates.reverse()
+            activities_accessor = self.api_client.metrics.get('activities')
+            if not activities_accessor:
+                result['errors'].append("Activities accessor not found")
+                return result
             
-            # Process dates in batches
-            batch_size = config.batch_size
-            for i in range(0, len(dates), batch_size):
-                if self._stop_flags.get(sync_id, False):
-                    progress.status = SyncStatus.PAUSED
-                    await self._update_progress(progress)
-                    return
-                
-                batch_dates = dates[i:i + batch_size]
-                
-                # Filter out already completed dates
-                pending_dates = [d for d in batch_dates if d.isoformat() not in checkpoint.completed_dates]
-                
-                if not pending_dates:
-                    continue
-                
-                # Process batch of dates
-                await self._process_date_batch(sync_id, config, pending_dates, checkpoint)
+            # Pagination loop
+            start_offset = 0
+            limit = 100
+            total_processed = 0
             
-            # Sync completed successfully
-            progress.status = SyncStatus.COMPLETED
-            progress.completed_at = datetime.now()
-            progress.current_metric = None
-            progress.current_date = None
+            self.logger.info(f"Syncing activities from {start_date} to {end_date}")
             
-            await self._update_progress(progress)
+            while True:
+                try:
+                    # Fetch page of activities
+                    activities = activities_accessor.list(limit=limit, start=start_offset)
+                    
+                    if not activities:
+                        self.logger.info(f"No more activities found at offset {start_offset}")
+                        break
+                    
+                    page_synced = 0
+                    page_skipped = 0
+                    
+                    for activity in activities:
+                        total_processed += 1
+                        
+                        # Update progress
+                        if progress_callback:
+                            # Create dummy progress for activities
+                            class ActivitiesProgress:
+                                def __init__(self):
+                                    self.current_metric = 'activities'
+                                    self.current_date = f"страница {start_offset//limit + 1}"
+                                    self.progress_percentage = 0  # Can't calculate without total
+                                    self.completed_metrics = total_processed
+                                    self.total_metrics = total_processed + 1
+                                    self.total_dates = 1
+                                    self.completed_dates = 0
+                                    self.elapsed_time = timedelta(seconds=0)
+                            
+                            progress_callback(ActivitiesProgress())
+                        
+                        try:
+                            activity_date_str = activity.start_date
+                            if not activity_date_str:
+                                page_skipped += 1
+                                continue
+                            
+                            activity_date = datetime.strptime(activity_date_str, '%Y-%m-%d').date()
+                            
+                            # Filter by date range
+                            if start_date <= activity_date <= end_date:
+                                # Check if activity already exists (O(1) lookup)
+                                if activity.activity_id in existing_activity_ids:
+                                    result['records_skipped'] += 1
+                                    self.logger.debug(f"Skipping activity {activity.activity_id} - already exists")
+                                    continue
+                                
+                                # Store new activity
+                                self.storage.store_activity(self.user_id, activity)
+                                result['records_synced'] += 1
+                                page_synced += 1
+                                
+                                # Update cache to avoid re-processing this activity in same session
+                                existing_activity_ids.add(activity.activity_id)
+                            else:
+                                page_skipped += 1
+                                
+                        except Exception as e:
+                            error_msg = f"Error processing activity {activity.activity_id}: {e}"
+                            result['errors'].append(error_msg)
+                            self.logger.warning(error_msg)
+                    
+                    self.logger.info(f"Page {start_offset//limit + 1}: processed {len(activities)}, synced {page_synced}, skipped {page_skipped}")
+                    
+                    # Check if we should continue
+                    if len(activities) < limit:
+                        self.logger.info(f"Last page reached (got {len(activities)} < {limit})")
+                        break
+                    
+                    start_offset += limit
+                    
+                    # Safety break to avoid infinite loops
+                    if start_offset > 10000:  # Max 10k activities
+                        self.logger.warning("Hit safety limit of 10k activities")
+                        break
+                        
+                    # Small delay between pages
+                    await asyncio.sleep(0.5)
+                    
+                except Exception as e:
+                    error_msg = f"Error fetching activities page {start_offset//limit + 1}: {e}"
+                    result['errors'].append(error_msg)
+                    self.logger.error(error_msg)
+                    break
             
-            # Clean up only checkpoint data, keep status for history
-            self.storage.cleanup_sync_checkpoint(config.user_id, sync_id)
-            
-            # Keep in active syncs for a bit so status can be seen
-            await asyncio.sleep(2)
+            self.logger.info(f"Activities sync completed: {result['records_synced']} new, {result['records_updated']} updated")
             
         except Exception as e:
-            self.logger.error(f"Sync {sync_id} failed: {e}", exc_info=True)
-            progress.status = SyncStatus.FAILED
-            progress.error_message = str(e)
-            await self._update_progress(progress)
-            
-            # Save checkpoint for potential recovery
-            await self._save_checkpoint(checkpoint)
-            
-            # Don't remove from active syncs immediately so we can see the error
-            return
-            
-        finally:
-            # Clean up
-            if sync_id in self._active_syncs:
-                del self._active_syncs[sync_id]
-            if sync_id in self._sync_tasks:
-                del self._sync_tasks[sync_id]
-            if sync_id in self._stop_flags:
-                del self._stop_flags[sync_id]
-    
-    async def _process_date_batch(
-        self,
-        sync_id: str,
-        config: SyncConfig,
-        dates: List[date],
-        checkpoint: SyncCheckpoint
-    ) -> None:
-        """Process a batch of dates, downloading all metrics for each date."""
-        progress = self._active_syncs[sync_id]
+            error_msg = f"Activities sync failed: {e}"
+            result['errors'].append(error_msg)
+            self.logger.error(error_msg)
         
-        for date_obj in dates:
-            if self._stop_flags.get(sync_id, False):
-                return
-            
-            date_str = date_obj.isoformat()
-            progress.current_date = date_str
-            await self._update_progress(progress)
-            
-            # Download all metrics for this date
-            date_success = True
-            for metric in config.metrics:
-                if self._stop_flags.get(sync_id, False):
-                    return
-                
-                progress.current_metric = metric
-                await self._update_progress(progress)
-                
-                success = await self._sync_single_metric_date(
-                    sync_id, config, metric, date_str, checkpoint
-                )
-                
-                if not success:
-                    date_success = False
-            
-            # Mark date as completed only if all metrics succeeded or were skipped
-            if date_success:
-                checkpoint.completed_dates.add(date_str)
-                progress.completed_days += 1
-                
-                # Save checkpoint periodically
-                if len(checkpoint.completed_dates) % 10 == 0:  # Every 10 dates
-                    await self._save_checkpoint(checkpoint)
-                
-                await self._update_progress(progress)
-    
-    async def _sync_single_metric_date(
-        self,
-        sync_id: str,
-        config: SyncConfig,
-        metric: str,
-        date_str: str,
-        checkpoint: SyncCheckpoint
-    ) -> bool:
-        """Sync a single metric for a single date with retry logic."""
-        retry_key = f"{metric}:{date_str}"
-        attempts = checkpoint.failed_attempts.get(retry_key, 0)
-        
-        if attempts >= config.retry_attempts:
-            self.logger.warning(f"Skipping {retry_key} after {attempts} failed attempts")
-            return True  # Consider as success to not block the date
-        
-        for attempt in range(attempts, config.retry_attempts):
-            try:
-                # Fetch data from API
-                metric_accessor = self.api_client.metrics.get(metric)
-                data = metric_accessor.get(date_str)
-                
-                if data is not None:
-                    # Convert dataclass to dict if needed
-                    data_dict = _convert_to_dict(data)
-                    
-                    # Store in local database
-                    self.storage.store_metric_data(
-                        config.user_id, metric, date_str, data_dict
-                    )
-                    
-                    # Remove from failed attempts
-                    if retry_key in checkpoint.failed_attempts:
-                        del checkpoint.failed_attempts[retry_key]
-                    
-                    return True
-                else:
-                    self.logger.debug(f"No data available for {metric} on {date_str}")
-                    return True  # No data is considered success
-                    
-            except TypeError as e:
-                # Data parsing/structure errors - don't retry, just skip
-                if "missing" in str(e) and "required positional argument" in str(e):
-                    self.logger.warning(f"Data structure error for {retry_key}, skipping: {e}")
-                    return True  # Skip this metric for this date
-                else:
-                    # Other TypeError, treat as retryable
-                    self.logger.warning(f"Attempt {attempt + 1} failed for {retry_key}: {e}")
-                    checkpoint.failed_attempts[retry_key] = attempt + 1
-                    if attempt < config.retry_attempts - 1:
-                        await asyncio.sleep(config.retry_delay)
-            
-            except (ValueError, AttributeError) as e:
-                # Data validation errors - don't retry, just skip
-                self.logger.warning(f"Data validation error for {retry_key}, skipping: {e}")
-                return True  # Skip this metric for this date
-                    
-            except Exception as e:
-                # Network or other retryable errors
-                self.logger.warning(f"Attempt {attempt + 1} failed for {retry_key}: {e}")
-                checkpoint.failed_attempts[retry_key] = attempt + 1
-                
-                if attempt < config.retry_attempts - 1:
-                    await asyncio.sleep(config.retry_delay)
-        
-        self.logger.error(f"Failed to sync {retry_key} after {config.retry_attempts} attempts")
-        return False  # This metric failed for this date
-    
-    async def _load_or_create_checkpoint(self, sync_id: str, config: SyncConfig) -> SyncCheckpoint:
-        """Load existing checkpoint or create new one."""
-        checkpoint_data = self.storage.get_sync_checkpoint(config.user_id, sync_id)
-        
-        if checkpoint_data:
-            return SyncCheckpoint.from_dict(checkpoint_data["checkpoint"])
-        else:
-            return SyncCheckpoint(sync_id=sync_id, user_id=config.user_id)
-    
-    async def _save_checkpoint(self, checkpoint: SyncCheckpoint) -> None:
-        """Save checkpoint to storage."""
-        checkpoint.last_checkpoint = datetime.now()
-        self.storage.store_sync_checkpoint(
-            checkpoint.user_id, 
-            checkpoint.sync_id, 
-            checkpoint.to_dict()
-        )
-    
-    async def _update_progress(self, progress: SyncProgress) -> None:
-        """Update progress in storage and notify callbacks."""
-        # Calculate estimated completion
-        if progress.status == SyncStatus.RUNNING and progress.completed_days > 0:
-            elapsed = progress.elapsed_time
-            if elapsed:
-                rate = progress.completed_days / elapsed.total_seconds()
-                remaining_days = progress.total_days - progress.completed_days
-                remaining_seconds = remaining_days / rate if rate > 0 else 0
-                progress.estimated_completion = datetime.now() + timedelta(seconds=remaining_seconds)
-        
-        # Store in database
-        self.storage.store_sync_status(
-            progress.user_id, 
-            progress.sync_id, 
-            progress.to_dict()
-        )
-        
-        # Notify callbacks
-        self._notify_progress(progress)
+        return result

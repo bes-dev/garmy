@@ -270,7 +270,7 @@ def run_all_demos():
 
 
 if __name__ == "__main__":
-    (run_all_demos())
+    run_all_demos()
 
     print("\n💡 Steps Data Analysis Notes:")
     print("   • All data comes directly from Garmin Connect API")

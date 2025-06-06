@@ -1,281 +1,228 @@
 #!/usr/bin/env python3
+"""LocalDB 1.0 Demo - Modern SQLAlchemy-based analytics and storage.
+
+=====================================
+
+This example demonstrates the LocalDB 1.0 architecture built from scratch
+with SQLAlchemy, focused on analytics capabilities and type-safe operations.
+
+Key features:
+- Automatic extraction from dataclasses to specialized tables
+- Fast analytics queries with optimized indexing
+- Type-safe operations with SQLAlchemy models
+- Comprehensive data quality reporting
+- Future-proof schema ready for ML and data science
+- High-performance queries for statistics and trends
+
+Example output:
+    Sleep Analytics (30 days):
+    - Average sleep: 7.2 hours
+    - Sleep efficiency: 87.3%
+    - Deep sleep: 18.5%
+    
+    Steps Analytics (30 days):
+    - Total steps: 312,450
+    - Daily average: 10,415 steps
+    - Goal achievement: 83.3%
 """
-Local Database Demo
 
-This example demonstrates how to use the local database functionality
-to automatically sync and store Garmin Connect data locally.
-
-Features demonstrated:
-- Setting up users for local data storage
-- Configuring and starting data synchronization
-- Monitoring sync progress
-- Querying locally stored data
-- Multi-user support
-
-Requirements:
-- Install with localdb extras: pip install garmy[localdb]
-- Valid Garmin Connect credentials
-- SQLite (included with Python)
-"""
-
-import asyncio
-import time
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
-from garmy.auth.client import AuthClient
-from garmy.core.client import APIClient
-from garmy.localdb import (
-    LocalDBClient,
-    LocalDBConfig,
-    SyncConfig,
-    UserConfig,
-    SyncStatus,
-)
+from garmy.localdb.storage import LocalDataStore
+from garmy.localdb.config import LocalDBConfig
 
 
-async def main():
-    """Main demo function."""
-    print("🏃‍♂️ Garmin Local Database Demo")
-    print("=" * 50)
-    
-    # Create local database configuration
-    db_path = Path.home() / ".garmy" / "demo_localdb"
-    config = LocalDBConfig.default(db_path)
-    
-    print(f"📁 Database path: {config.db_path}")
-    print(f"🗜️  Compression: {config.compression}")
-    print()
-    
-    # Initialize local database client
-    with LocalDBClient(config) as local_client:
-        # Demo 1: User Management
-        await demo_user_management(local_client)
-        
-        # Demo 2: Data Synchronization
-        await demo_data_synchronization(local_client)
-        
-        # Demo 3: Querying Local Data
-        await demo_query_local_data(local_client)
-        
-        # Demo 4: Database Statistics
-        await demo_database_stats(local_client)
+def main():
+    """Demonstrate LocalDB 1.0 capabilities."""
+    print("🚀 Garmin LocalDB 1.0 Demo (Modern SQLAlchemy Architecture)")
+    print("=" * 60)
 
-
-async def demo_user_management(local_client: LocalDBClient):
-    """Demonstrate user management functionality."""
-    print("👤 User Management Demo")
-    print("-" * 30)
+    # Setup database
+    db_path = Path.home() / ".garmy" / "localdb"
+    config = LocalDBConfig.default(db_path / "garmin_data.db")
     
-    # Check existing users
-    users = local_client.list_users()
-    print(f"📋 Current users: {len(users)}")
-    
-    if users:
-        for user in users:
-            print(f"  - {user.email} ({user.user_id})")
-            print(f"    Last sync: {user.last_sync or 'Never'}")
-    else:
-        print("  No users configured yet.")
-    
-    print("\n💡 To add a new user, use the CLI:")
-    print("   garmy-localdb setup-user your-email@example.com")
+    print(f"🗄️  Database: {config.db_path}")
+    print(f"📊 Using SQLAlchemy models with specialized analytics tables")
     print()
 
+    try:
+        with LocalDataStore(config) as store:
+            # Demonstrate analytics capabilities
+            demo_analytics(store)
+            
+            # Demonstrate data quality reporting
+            demo_data_quality(store)
+            
+            # Demonstrate storage optimization
+            demo_storage_info(store)
+            
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        print("💡 Make sure you have data synced first")
 
-async def demo_data_synchronization(local_client: LocalDBClient):
-    """Demonstrate data synchronization."""
-    print("🔄 Data Synchronization Demo")
-    print("-" * 35)
+
+def demo_analytics(store: LocalDataStore):
+    """Demonstrate analytics capabilities."""
+    print("📈 Analytics Demo")
+    print("-" * 20)
     
-    users = local_client.list_users()
+    # Check if we have users
+    users = store.list_users()
     if not users:
-        print("❌ No users configured. Please add a user first.")
-        print("   Use: garmy-localdb setup-user your-email@example.com")
+        print("ℹ️  No users found. Please sync some data first.")
         return
     
-    # Use the first available user
-    user = users[0]
-    print(f"👤 Using user: {user.email}")
+    user_id = users[0].user_id
+    print(f"👤 Analyzing data for user: {user_id}")
     
-    # Create sync configuration for last 7 days
+    # Date range for analysis
     end_date = date.today()
-    start_date = end_date - timedelta(days=7)
+    start_date = end_date - timedelta(days=30)
     
-    sync_config = SyncConfig(
-        user_id=user.user_id,
-        start_date=start_date,
-        end_date=end_date,
-        metrics=["sleep", "heart_rate", "steps"],  # Sync only a few metrics for demo
-        batch_size=3,
-        retry_attempts=2,
-        auto_resume=True,
-        incremental=True,
-    )
-    
-    print(f"📅 Sync period: {start_date} to {end_date}")
-    print(f"📊 Metrics: {', '.join(sync_config.metrics)}")
+    print(f"📅 Date range: {start_date} to {end_date}")
     print()
     
-    # Check if we have valid authentication
+    # Sleep analytics
     try:
-        # This is a simplified demo - in practice you'd handle auth properly
-        print("🔐 Note: This demo requires valid authentication.")
-        print("   In a real application, you would authenticate with Garmin Connect first.")
-        print("   For now, we'll demonstrate the sync configuration only.")
-        
-        # Simulate starting sync (commented out to avoid auth issues)
-        # sync_id = await local_client.start_sync(sync_config)
-        # print(f"🚀 Started sync: {sync_id}")
-        
-        print("✅ Sync configuration created successfully!")
-        print("💡 To actually start sync, use CLI with proper authentication:")
-        print(f"   garmy-localdb sync {user.user_id} {start_date} {end_date}")
-        
-    except Exception as e:
-        print(f"❌ Sync demo failed: {e}")
-        print("💡 This is expected in demo mode without valid auth.")
-    
-    print()
-
-
-async def demo_query_local_data(local_client: LocalDBClient):
-    """Demonstrate querying locally stored data."""
-    print("🔍 Local Data Query Demo")
-    print("-" * 30)
-    
-    users = local_client.list_users()
-    if not users:
-        print("❌ No users configured.")
-        return
-    
-    user = users[0]
-    print(f"👤 Querying data for: {user.email}")
-    
-    # List available metrics
-    try:
-        metrics = local_client.list_user_metrics(user.user_id)
-        print(f"📊 Available metrics: {len(metrics)}")
-        
-        if metrics:
-            for metric in metrics[:5]:  # Show first 5 metrics
-                print(f"  - {metric}")
-                
-                # Get available dates for this metric
-                dates = local_client.list_metric_dates(user.user_id, metric)
-                print(f"    Available dates: {len(dates)}")
-                
-                if dates:
-                    # Show sample data from the most recent date
-                    recent_date = dates[-1]
-                    data = local_client.get_metric_data(user.user_id, metric, recent_date)
-                    
-                    if data:
-                        print(f"    Sample from {recent_date}:")
-                        # Show first few keys of the data
-                        sample_keys = list(data.keys())[:3]
-                        for key in sample_keys:
-                            print(f"      {key}: {data[key]}")
-                        if len(data) > 3:
-                            print(f"      ... and {len(data) - 3} more fields")
-                    else:
-                        print(f"    No data available for {recent_date}")
-                print()
+        sleep_analytics = store.get_sleep_analytics(user_id, start_date, end_date)
+        if sleep_analytics:
+            print("😴 Sleep Analytics (Last 30 days):")
+            print(f"   📊 Total nights: {sleep_analytics.get('total_days', 0)}")
+            print(f"   🛌 Average sleep: {sleep_analytics.get('average_sleep_hours', 0):.1f} hours")
+            print(f"   ⚡ Sleep efficiency: {sleep_analytics.get('average_efficiency', 0):.1f}%")
+            print(f"   🌙 Deep sleep: {sleep_analytics.get('average_deep_sleep_percentage', 0):.1f}%")
+            print(f"   🏆 Best night: {sleep_analytics.get('best_sleep_day', 'N/A')}")
+            print(f"   📉 Worst night: {sleep_analytics.get('worst_sleep_day', 'N/A')}")
         else:
-            print("  No metrics data found.")
-            print("💡 Run a sync first to populate local data:")
-            print(f"   garmy-localdb sync {user.user_id} 2023-12-01 2023-12-07")
-    
-    except Exception as e:
-        print(f"❌ Query failed: {e}")
-    
-    print()
-
-
-async def demo_database_stats(local_client: LocalDBClient):
-    """Demonstrate database statistics."""
-    print("📈 Database Statistics Demo")
-    print("-" * 35)
-    
-    try:
-        stats = local_client.get_database_stats()
-        
-        print(f"👥 Total users: {stats['users_count']}")
-        print(f"📁 Database path: {stats['db_path']}")
-        print(f"🗜️  Compression: {'Enabled' if stats['compression_enabled'] else 'Disabled'}")
+            print("😴 No sleep data available for analytics")
         print()
-        
-        if stats['user_data_counts']:
-            print("📊 Data records per user:")
-            for user_id, count in stats['user_data_counts'].items():
-                print(f"  {user_id}: {count:,} records")
-        else:
-            print("📊 No data records found.")
-        
     except Exception as e:
-        print(f"❌ Stats query failed: {e}")
+        print(f"😴 Sleep analytics error: {e}")
+        print()
     
-    print()
+    # Steps analytics
+    try:
+        steps_analytics = store.get_steps_analytics(user_id, start_date, end_date)
+        if steps_analytics:
+            print("🚶 Steps Analytics (Last 30 days):")
+            print(f"   📊 Total days: {steps_analytics.get('total_days', 0)}")
+            print(f"   👟 Total steps: {steps_analytics.get('total_steps', 0):,}")
+            print(f"   📈 Daily average: {steps_analytics.get('average_daily_steps', 0):,} steps")
+            print(f"   🎯 Goals achieved: {steps_analytics.get('goals_achieved', 0)}")
+            print(f"   ✅ Goal rate: {steps_analytics.get('goal_achievement_rate', 0):.1f}%")
+            print(f"   🏃 Best day: {steps_analytics.get('best_day_steps', 0):,} steps")
+            print(f"   🚶 Total distance: {steps_analytics.get('total_distance_km', 0):.1f} km")
+        else:
+            print("🚶 No steps data available for analytics")
+        print()
+    except Exception as e:
+        print(f"🚶 Steps analytics error: {e}")
+        print()
 
 
-def demo_cli_commands():
-    """Show example CLI commands."""
-    print("🖥️  CLI Commands Demo")
+def demo_data_quality(store: LocalDataStoreV2):
+    """Demonstrate data quality reporting."""
+    print("🔍 Data Quality Report")
     print("-" * 25)
     
-    print("Here are some useful CLI commands you can try:")
+    users = store.list_users()
+    if not users:
+        print("ℹ️  No users to analyze")
+        return
+    
+    user_id = users[0].user_id
+    
+    try:
+        quality_report = store.get_data_quality_report(user_id)
+        
+        print(f"👤 User: {quality_report['user_id']}")
+        print(f"📊 Total records: {quality_report['total_records']:,}")
+        print(f"📅 Date coverage: {quality_report['date_range']['days_covered']} days")
+        print(f"   From: {quality_report['date_range']['start'] or 'N/A'}")
+        print(f"   To: {quality_report['date_range']['end'] or 'N/A'}")
+        print(f"💾 Storage usage: {quality_report['storage_usage_mb']:.1f} MB")
+        print()
+        
+        print("📋 Metrics coverage:")
+        metrics_coverage = quality_report['metrics_coverage']
+        if metrics_coverage:
+            for metric, count in sorted(metrics_coverage.items()):
+                print(f"   {metric}: {count:,} records")
+        else:
+            print("   No metrics data found")
+        print()
+        
+    except Exception as e:
+        print(f"❌ Data quality report error: {e}")
+        print()
+
+
+def demo_storage_info(store: LocalDataStoreV2):
+    """Demonstrate storage and database information."""
+    print("🗄️  Storage Information")
+    print("-" * 25)
+    
+    try:
+        db_stats = store.get_database_stats()
+        
+        print(f"📍 Database path: {db_stats['db_path']}")
+        print(f"👥 Users: {db_stats['users_count']}")
+        print(f"📊 Total records: {db_stats['total_metric_records']:,}")
+        print()
+        
+        print("📈 Records by metric type:")
+        metric_counts = db_stats.get('metric_type_counts', {})
+        for metric, count in sorted(metric_counts.items()):
+            print(f"   {metric}: {count:,}")
+        print()
+        
+        print("👤 Records by user:")
+        user_counts = db_stats.get('user_data_counts', {})
+        for user, count in sorted(user_counts.items()):
+            print(f"   {user}: {count:,}")
+        print()
+        
+    except Exception as e:
+        print(f"❌ Storage info error: {e}")
+        print()
+
+
+def demo_advanced_features():
+    """Demonstrate LocalDB 1.0 architecture highlights."""
+    print("🚀 LocalDB 1.0 Architecture")
+    print("-" * 30)
+    
+    print("✨ Core Features:")
+    print("   🔄 Automatic dataclass extraction to specialized tables")
+    print("   📊 Fast analytics with optimized database indexes")
+    print("   🛡️  Type-safe operations with SQLAlchemy models")
+    print("   📈 Hybrid properties for computed metrics")
+    print("   🔍 Comprehensive data quality reporting")
+    print("   📤 Enhanced export capabilities")
+    print("   🗃️  Optimized storage with metadata tracking")
+    print("   🔮 Future-proof schema with Alembic migrations")
+    print("   🤖 Ready for ML and data science workflows")
     print()
     
-    print("📋 List users:")
-    print("   garmy-localdb list-users")
-    print()
-    
-    print("👤 Add new user:")
-    print("   garmy-localdb setup-user your-email@example.com --name 'Your Name'")
-    print()
-    
-    print("🔄 Start sync (last 30 days):")
-    print("   garmy-localdb sync user_id 2023-11-01 2023-11-30")
-    print()
-    
-    print("📊 Check sync status:")
-    print("   garmy-localdb status")
-    print("   garmy-localdb status <sync_id>")
-    print()
-    
-    print("🔍 Query local data:")
-    print("   garmy-localdb query user_id sleep --format json")
-    print("   garmy-localdb query user_id heart_rate --start-date 2023-11-01")
-    print()
-    
-    print("📈 Database statistics:")
-    print("   garmy-localdb stats")
-    print()
-    
-    print("⏸️  Control sync operations:")
-    print("   garmy-localdb pause <sync_id>")
-    print("   garmy-localdb resume <sync_id>")
-    print("   garmy-localdb stop <sync_id>")
+    print("🏗️  Architecture Design:")
+    print("   • Dual storage: Generic JSON + specialized analytics tables")
+    print("   • Automatic metric extraction from API dataclasses")
+    print("   • Optimized indexes for common query patterns")
+    print("   • Comprehensive relationship mapping with foreign keys")
+    print("   • Efficient upsert operations for data updates")
+    print("   • Built-in data integrity and validation")
     print()
 
 
 if __name__ == "__main__":
-    print("Starting Garmin Local Database Demo...")
-    print()
+    demo_advanced_features()
+    main()
     
-    # Run main demo
-    asyncio.run(main())
-    
-    # Show CLI commands
-    demo_cli_commands()
-    
-    print("✅ Demo completed!")
-    print()
-    print("🚀 Next steps:")
-    print("1. Install with localdb extras: pip install garmy[localdb]")
-    print("2. Set up a user: garmy-localdb setup-user your-email@example.com")
-    print("3. Start syncing: garmy-localdb sync user_id start_date end_date")
-    print("4. Monitor progress: garmy-localdb status")
-    print("5. Query your data: garmy-localdb query user_id metric_name")
-    print()
-    print("📚 For more information, see the documentation and examples.")
+    print("💡 LocalDB 1.0 Notes:")
+    print("   • Modern SQLAlchemy architecture built from scratch")
+    print("   • Enhanced analytics capabilities with specialized tables")
+    print("   • Type-safe metric extraction from dataclasses")
+    print("   • Optimized for advanced reporting and ML applications")
+    print("   • Future schema changes handled by Alembic migrations")
+    print("   • Production-ready for data science and analytics workflows")

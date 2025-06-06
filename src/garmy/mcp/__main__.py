@@ -1,10 +1,7 @@
-"""Entry point for running Garmy MCP CLI as a module.
+#!/usr/bin/env python3
+"""MCP module entry point."""
 
-This allows the MCP CLI to be executed using:
-    python -m garmy.mcp.cli <command>
-"""
-
-from .cli import main
+from .server import main
 
 if __name__ == "__main__":
     main()

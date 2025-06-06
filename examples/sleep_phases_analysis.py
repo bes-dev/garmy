@@ -20,14 +20,14 @@ Usage:
 import csv
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from tqdm import tqdm
 
 from garmy import APIClient, AuthClient
 
 
-def get_sleep_phases_for_date(target_date: date) -> Optional[Dict[str, any]]:
+def get_sleep_phases_for_date(target_date: date) -> Optional[Dict[str, Any]]:
     """
     Get sleep phases data for a specific date.
 
@@ -113,7 +113,7 @@ def get_sleep_phases_for_date(target_date: date) -> Optional[Dict[str, any]]:
         return None
 
 
-def collect_sleep_data(start_date: date, end_date: date) -> List[Dict[str, any]]:
+def collect_sleep_data(start_date: date, end_date: date) -> List[Dict[str, Any]]:
     """
     Collect sleep data for a date range with progress bar.
 
@@ -148,7 +148,7 @@ def collect_sleep_data(start_date: date, end_date: date) -> List[Dict[str, any]]
 
 
 def save_to_csv(
-    sleep_data: List[Dict[str, any]], filename: str = "sleep_phases_analysis.csv"
+    sleep_data: List[Dict[str, Any]], filename: str = "sleep_phases_analysis.csv"
 ) -> str:
     """
     Save sleep data to CSV file.
@@ -193,7 +193,7 @@ def save_to_csv(
     return csv_path
 
 
-def print_summary_stats(sleep_data: List[Dict[str, any]]):
+def print_summary_stats(sleep_data: List[Dict[str, Any]]):
     """Print summary statistics about the collected sleep data."""
     if not sleep_data:
         print("❌ No sleep data collected")
@@ -257,7 +257,7 @@ def get_date_input(prompt: str, default_date: date = None) -> date:
             print("❌ Invalid date format. Please use YYYY-MM-DD format.")
 
 
-def get_date_range() -> tuple[date, date]:
+def get_date_range() -> Tuple[date, date]:
     """Get start and end dates from user input."""
     print("\n📅 Date Range Selection")
     print("-" * 30)

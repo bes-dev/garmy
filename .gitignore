@@ -214,3 +214,18 @@ log.txt
 test_*coverage*.py
 test_remaining*.py
 test_final*.py
+
+# LocalDB
+*.db
+*.sqlite
+*.sqlite3
+test.db/
+
+# MCP config files
+claude_desktop_config*.json
+
+# Demo and test files  
+*_demo.py
+*_comparison*.py
+test_improvements.py
+sync_comparison_demo.py
