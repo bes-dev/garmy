@@ -121,7 +121,7 @@ def demo_analytics(store: LocalDataStore):
         print()
 
 
-def demo_data_quality(store: LocalDataStoreV2):
+def demo_data_quality(store: LocalDataStore):
     """Demonstrate data quality reporting."""
     print("🔍 Data Quality Report")
     print("-" * 25)
@@ -158,7 +158,7 @@ def demo_data_quality(store: LocalDataStoreV2):
         print()
 
 
-def demo_storage_info(store: LocalDataStoreV2):
+def demo_storage_info(store: LocalDataStore):
     """Demonstrate storage and database information."""
     print("🗄️  Storage Information")
     print("-" * 25)

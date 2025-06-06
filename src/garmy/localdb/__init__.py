@@ -31,6 +31,7 @@ from .client import LocalDBClient
 from .storage import LocalDataStore
 from .sync import SyncManager, SyncProgress
 from .models import User, StepsData, HeartRateData, SleepData, BodyBatteryData
+from .config import LocalDBConfig
 
 # Compatibility aliases
 LocalDB = LocalDBClient
@@ -42,6 +43,7 @@ __all__ = [
     'LocalDataStore', 
     'SyncManager',
     'SyncProgress',
+    'LocalDBConfig',
     
     # Models
     'User',

@@ -22,7 +22,7 @@ Data Source:
     Garmin Connect API endpoint: /wellness-service/wellness/dailyStress/{date}
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List, Optional
 
 if TYPE_CHECKING:
@@ -45,6 +45,21 @@ class BodyBatteryReading(TimestampMixin):
     def datetime(self) -> "datetime":
         """Convert timestamp to datetime object."""
         return self.timestamp_to_datetime(self.timestamp)
+
+
+@dataclass
+class BodyBatterySummary:
+    """Body Battery summary for database storage."""
+    calendar_date: str
+    start_level: int
+    end_level: int
+    highest_level: int
+    lowest_level: int
+    net_change: int
+    charging_periods_count: int
+    draining_periods_count: int
+    total_readings: int
+    readings_json: str
 
 
 @dataclass
@@ -79,9 +94,9 @@ class BodyBattery:
         >>>     print(f"{reading.datetime}: {reading.level}% ({reading.status})")
     """
 
-    user_profile_pk: int
-    calendar_date: str
-    body_battery_values_array: List[List[Any]]
+    user_profile_pk: int = 0
+    calendar_date: str = ""
+    body_battery_values_array: Optional[List[List[Any]]] = field(default_factory=list)
 
     # Optional fields we ignore for Body Battery analysis
     start_timestamp_gmt: Optional["datetime"] = None
@@ -100,6 +115,9 @@ class BodyBattery:
     def body_battery_readings(self) -> List[BodyBatteryReading]:
         """Parse raw Body Battery data into structured readings."""
         readings = []
+        if not self.body_battery_values_array:
+            return readings
+            
         for item in self.body_battery_values_array:
             if len(item) >= 4:
                 readings.append(
@@ -111,6 +129,49 @@ class BodyBattery:
                     )
                 )
         return readings
+
+    def to_summary(self) -> "BodyBatterySummary":
+        """Convert to summary format for database storage."""
+        readings = self.body_battery_readings
+        if not readings:
+            return None
+        
+        # Filter out None levels and ensure we have valid data
+        valid_levels = [r.level for r in readings if r.level is not None]
+        if not valid_levels:
+            return None
+        
+        # Analyze charging vs draining periods
+        charging_count = 0
+        draining_count = 0
+        
+        for reading in readings:
+            status = str(getattr(reading, 'status', '')).lower()
+            if 'charg' in status:
+                charging_count += 1
+            else:
+                draining_count += 1
+        
+        # Use first and last valid readings
+        first_valid = next((r for r in readings if r.level is not None), readings[0])
+        last_valid = next((r for r in reversed(readings) if r.level is not None), readings[-1])
+        
+        return BodyBatterySummary(
+            calendar_date=self.calendar_date,
+            start_level=first_valid.level or 0,
+            end_level=last_valid.level or 0,
+            highest_level=max(valid_levels),
+            lowest_level=min(valid_levels),
+            net_change=(last_valid.level or 0) - (first_valid.level or 0),
+            charging_periods_count=charging_count,
+            draining_periods_count=draining_count,
+            total_readings=len(readings),
+            readings_json=str([{
+                'timestamp': r.datetime.isoformat() if hasattr(r, 'datetime') else '',
+                'level': r.level or 0,
+                'status': str(getattr(r, 'status', ''))
+            } for r in readings])
+        )
 
 
 # Create parser using factory function

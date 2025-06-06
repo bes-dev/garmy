@@ -194,26 +194,9 @@ def create_activities_table():
 
 ActivitiesData = create_activities_table()
 
-# For BodyBattery, we need to handle the readings differently
-@dataclass 
-class BodyBatterySummary:
-    """Body Battery summary for table generation."""
-    calendar_date: str
-    start_level: int
-    end_level: int
-    highest_level: int
-    lowest_level: int
-    net_change: int
-    charging_periods_count: int
-    draining_periods_count: int
-    total_readings: int
-    readings_json: str  # Serialized readings
-
-try:
-    from ..metrics.body_battery import BodyBatterySummary as BBSummary
-    BodyBatteryData = create_table_from_dataclass(BBSummary, 'body_battery_data')
-except ImportError:
-    BodyBatteryData = create_table_from_dataclass(BodyBatterySummary, 'body_battery_data')
+# Import BodyBatterySummary from metrics module
+from ..metrics.body_battery import BodyBatterySummary
+BodyBatteryData = create_table_from_dataclass(BodyBatterySummary, 'body_battery_data')
 
 # Add relationships to User
 User.steps = relationship("StepsData", back_populates="user", cascade="all, delete-orphan")
@@ -235,6 +218,10 @@ def serialize_field(value: Any) -> str:
         return ""
     if isinstance(value, (dict, list)):
         return json.dumps(value, default=str)
+    elif is_dataclass(value):
+        # Convert dataclass to dict and then serialize
+        from dataclasses import asdict
+        return json.dumps(asdict(value), default=str)
     return str(value)
 
 
@@ -246,8 +233,12 @@ def deserialize_field(value: str, target_type: type) -> Any:
     try:
         if 'List' in str(target_type) or 'Dict' in str(target_type):
             return json.loads(value)
+        # For dataclass types, try to reconstruct from JSON
+        elif hasattr(target_type, '__dataclass_fields__'):
+            data = json.loads(value)
+            return target_type(**data)
         return value
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         return value
 
 
@@ -275,6 +266,18 @@ def dataclass_to_model(dataclass_instance, model_class, user_id: str, data_date:
             if value is not None and value != 0 and value != "":
                 has_meaningful_data = True
         
+        # Special check for HRV data - meaningful data is in hrv_summary sub-object
+        if field.name == 'hrv_summary' and value is not None:
+            if hasattr(value, 'weekly_avg') and value.weekly_avg and value.weekly_avg != 0:
+                has_meaningful_data = True
+            if hasattr(value, 'last_night_avg') and value.last_night_avg and value.last_night_avg != 0:
+                has_meaningful_data = True
+        
+        # Special check for Body Battery data - meaningful data is in body_battery_values_array
+        if field.name == 'body_battery_values_array' and value is not None:
+            if isinstance(value, list) and len(value) > 0:
+                has_meaningful_data = True
+        
         # Handle None values and empty strings
         if value is None or value == "":
             if field.default != field.default_factory:
@@ -295,6 +298,9 @@ def dataclass_to_model(dataclass_instance, model_class, user_id: str, data_date:
         
         # Store the value
         if isinstance(value, (dict, list)):
+            model_data[field.name] = serialize_field(value)
+        elif is_dataclass(value):
+            # Serialize nested dataclasses (like HRVBaseline)
             model_data[field.name] = serialize_field(value)
         else:
             model_data[field.name] = value

@@ -160,6 +160,10 @@ class HRV:
     sleep_start_timestamp_local: Optional[str] = None
     sleep_end_timestamp_local: Optional[str] = None
 
+    def to_summary(self) -> HRVSummary:
+        """Get the HRV summary for database storage."""
+        return self.hrv_summary
+
 
 # Declarative configuration for auto-discovery with custom parser
 METRIC_CONFIG = MetricConfig(

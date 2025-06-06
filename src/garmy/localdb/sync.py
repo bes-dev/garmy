@@ -311,7 +311,7 @@ class SyncManager:
             # Most metric accessors support .get(date_string)
             data = metric_accessor.get(date_str)
             
-            # Handle different return types
+            # Handle different return types using public API methods
             if hasattr(data, 'daily_steps') and data.daily_steps:
                 # Steps data - return the daily data for this specific date
                 for daily_step in data.daily_steps:
@@ -327,61 +327,12 @@ class SyncManager:
                 # Sleep data
                 return data.sleep_summary
             
-            
-            elif hasattr(data, 'body_battery_readings'):
-                # Body battery data - need to transform to summary
-                if not data.body_battery_readings:
-                    return None
-                
-                readings = data.body_battery_readings
-                levels = [r.level for r in readings]
-                
-                # Create summary object with proper charging/draining analysis
-                from dataclasses import dataclass
-                
-                @dataclass
-                class BodyBatterySummary:
-                    calendar_date: str
-                    start_level: int
-                    end_level: int
-                    highest_level: int
-                    lowest_level: int
-                    net_change: int
-                    charging_periods_count: int
-                    draining_periods_count: int
-                    total_readings: int
-                    readings_json: str
-                
-                # Analyze charging vs draining periods
-                charging_count = 0
-                draining_count = 0
-                
-                for reading in readings:
-                    status = str(getattr(reading, 'status', '')).lower()
-                    if 'charg' in status:
-                        charging_count += 1
-                    else:
-                        draining_count += 1
-                
-                return BodyBatterySummary(
-                    calendar_date=date_str,
-                    start_level=readings[0].level,
-                    end_level=readings[-1].level,
-                    highest_level=max(levels),
-                    lowest_level=min(levels),
-                    net_change=readings[-1].level - readings[0].level,
-                    charging_periods_count=charging_count,
-                    draining_periods_count=draining_count,
-                    total_readings=len(readings),
-                    readings_json=str([{
-                        'timestamp': r.datetime.isoformat() if hasattr(r, 'datetime') else '',
-                        'level': r.level,
-                        'status': str(getattr(r, 'status', ''))
-                    } for r in readings])
-                )
+            elif hasattr(data, 'to_summary'):
+                # Body battery and other data with summary transformation method
+                return data.to_summary()
             
             else:
-                # Direct data return
+                # Direct data return for other metrics
                 return data
         
         except Exception as e:
