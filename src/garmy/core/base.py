@@ -54,6 +54,11 @@ class MetricConfig(Generic[T]):
     parser: Optional[Callable[[dict], T]] = None
     endpoint_builder: Optional[Callable[..., str]] = None
     requires_user_id: bool = False
+    
+    # Storage configuration  
+    storage_strategy: Optional[Any] = None  # StorageStrategy enum
+    storage_transformer: Optional[Any] = None  # Transformer class for this metric
+    storage_class: Optional[Type] = None  # Deprecated: use storage_transformer instead
 
     # Metadata
     description: Optional[str] = None

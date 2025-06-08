@@ -11,8 +11,8 @@ import pkgutil
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from .base import MetricConfig
-from .exceptions import DiscoveryError
+from garmy.core.base import MetricConfig
+from garmy.core.exceptions import DiscoveryError
 
 logger = logging.getLogger(__name__)
 

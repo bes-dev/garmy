@@ -200,6 +200,9 @@ class Steps:
 METRIC_CONFIG = MetricConfig(
     endpoint="",
     metric_class=Steps,
+    storage_strategy=None,  # Will be auto-determined as HYBRID
+    storage_transformer=None,  # Will be set by schema generator
+    storage_class=DailySteps,  # Deprecated: use storage_transformer instead
     parser=parse_steps_data,
     endpoint_builder=build_steps_endpoint,
     requires_user_id=False,

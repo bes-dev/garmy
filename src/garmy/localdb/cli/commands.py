@@ -1,7 +1,14 @@
 """Simple CLI for LocalDB operations."""
 import click
+from ..config import config_manager
 
 logger = None
+
+
+def get_db_path():
+    """Получить путь к базе данных из конфигурации."""
+    config = config_manager.get_config()
+    return str(config.db_path.expanduser())
 
 
 @click.group()
@@ -41,7 +48,7 @@ def setup_user(ctx, email: str):
         
         # 3. Создаем или обновляем пользователя в локальной базе
         click.echo("💾 Сохранение данных пользователя...")
-        with LocalDBClient("~/.garmy/health.db") as client:
+        with LocalDBClient(get_db_path()) as client:
             # Проверяем существует ли пользователь
             existing_user = client.get_user(user_id)
             if existing_user:
@@ -73,7 +80,7 @@ def login_user(ctx, user_id: str):
         import getpass
         
         # Проверяем существует ли пользователь
-        with LocalDBClient("~/.garmy/health.db") as client:
+        with LocalDBClient(get_db_path()) as client:
             user = client.get_user(user_id)
             if not user:
                 click.echo(f"✗ Пользователь {user_id} не найден")
@@ -117,7 +124,7 @@ def check_status(ctx, user_id: str):
         from ..core import LocalDBClient
         
         # Проверяем есть ли пользователь в базе
-        with LocalDBClient("~/.garmy/health.db") as client:
+        with LocalDBClient(get_db_path()) as client:
             user = client.get_user(user_id)
             if not user:
                 click.echo(f"✗ Пользователь {user_id} не найден в локальной базе")
@@ -145,7 +152,7 @@ def list_users(ctx):
     try:
         from ..core import LocalDBClient
         
-        with LocalDBClient("~/.garmy/health.db") as client:
+        with LocalDBClient(get_db_path()) as client:
             users = client.list_users()
             if not users:
                 click.echo("Пользователи не найдены")
@@ -185,25 +192,39 @@ def sync_data(ctx, user_id: str, start_date: str, end_date: str, days: int, prog
         def progress_callback(sync_progress):
             nonlocal progress_bar
             if progress:
+                # Handle both legacy and enhanced progress formats
+                if hasattr(sync_progress, 'total_metrics'):
+                    # Legacy format
+                    total = sync_progress.total_metrics
+                    current = sync_progress.completed_metrics
+                    current_metric = sync_progress.current_metric
+                    current_date = sync_progress.current_date
+                elif isinstance(sync_progress, dict):
+                    # Enhanced format
+                    total = sync_progress.get('total_items', 0)
+                    current = sync_progress.get('completed_items', 0)
+                    current_metric = sync_progress.get('current_metric', '')
+                    current_date = sync_progress.get('current_date', '')
+                else:
+                    return
+                
                 if progress_bar is None:
                     try:
                         from tqdm import tqdm
-                        progress_bar = tqdm(total=sync_progress.total_metrics, desc="Syncing metrics")
+                        progress_bar = tqdm(total=total, desc="Syncing metrics")
                     except ImportError:
                         # Fallback если tqdm не установлен
-                        current = sync_progress.completed_metrics
-                        total = sync_progress.total_metrics
                         percentage = (current / total * 100) if total > 0 else 0
-                        click.echo(f"\r[{current}/{total}] {percentage:.1f}% {sync_progress.current_metric}", nl=False)
+                        click.echo(f"\r[{current}/{total}] {percentage:.1f}% {current_metric}", nl=False)
                         return
                 
                 # Обновляем прогрессбар
-                progress_bar.n = sync_progress.completed_metrics
-                progress_bar.set_postfix_str(f"{sync_progress.current_metric} | {sync_progress.current_date}")
+                progress_bar.n = current
+                progress_bar.set_postfix_str(f"{current_metric} | {current_date}")
                 progress_bar.refresh()
         
         async def run_sync():
-            with LocalDBClient("~/.garmy/health.db") as client:
+            with LocalDBClient(get_db_path()) as client:
                 # Синхронизация с колбэком прогресса
                 result = await client.sync_user_data(user_id, start, end, progress_callback if progress else None)
                 
@@ -211,8 +232,31 @@ def sync_data(ctx, user_id: str, start_date: str, end_date: str, days: int, prog
                 if progress and progress_bar:
                     progress_bar.close()
                 
-                if isinstance(result, dict) and 'total_records' in result:
-                    click.echo(f"✓ Синхронизировано {result['total_records']} записей")
+                if isinstance(result, dict):
+                    success = result.get('total_success', 0)
+                    failed = result.get('total_failed', 0)
+                    skipped = result.get('total_skipped', 0)
+                    total_records = result.get('total_records', success)
+                    
+                    click.echo(f"✓ Синхронизация завершена: {success} успешно, {failed} неудачно, {skipped} пропущено")
+                    
+                    if success > 0:
+                        click.echo(f"📊 Синхронизировано {total_records} записей")
+                        
+                        # Show metrics breakdown
+                        metrics_synced = result.get('metrics_synced', {})
+                        if metrics_synced:
+                            click.echo("📈 По метрикам:")
+                            for metric, counts in metrics_synced.items():
+                                success_count = counts.get('success', 0)
+                                skipped_count = counts.get('skipped', 0)
+                                if success_count > 0 or skipped_count > 0:
+                                    status_parts = []
+                                    if success_count > 0:
+                                        status_parts.append(f"{success_count} новых")
+                                    if skipped_count > 0:
+                                        status_parts.append(f"{skipped_count} пропущено")
+                                    click.echo(f"   {metric}: {', '.join(status_parts)}")
                 else:
                     click.echo("✓ Синхронизация завершена")
         
@@ -230,7 +274,7 @@ def show_stats(ctx):
     try:
         from ..core import LocalDBClient
         
-        with LocalDBClient("~/.garmy/health.db") as client:
+        with LocalDBClient(get_db_path()) as client:
             stats = client.get_database_stats()
             
             click.echo("Статистика базы данных:")

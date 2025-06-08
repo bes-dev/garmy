@@ -36,7 +36,7 @@ class GarmyMCPServer:
         @self.mcp.tool()
         def get_database_schema() -> Dict[str, Any]:
             """Get complete database schema with tables, columns, and relationships."""
-            inspector = inspect(self.localdb.storage.engine)
+            inspector = inspect(self.localdb.enhanced_db.engine)
             
             schema = {"tables": {}, "semantics": {}}
             
@@ -97,6 +97,21 @@ class GarmyMCPServer:
                     "Filter by data_date ranges for time series analysis",
                     "Use JSON_EXTRACT for activities_data details",
                     "GROUP BY data_date for daily aggregations"
+                ],
+                
+                "data_quality_notes": [
+                    "⚠️ Most numeric fields are nullable (can be NULL) - use IS NOT NULL when needed",
+                    "⚠️ Date gaps are normal - not all metrics are recorded daily",
+                    "⚠️ NULL vs 0: NULL = no measurement, 0 = measured zero value",
+                    "⚠️ Use COALESCE(field, 0) to treat NULL as zero if needed",
+                    "⚠️ For time series: generate date ranges and LEFT JOIN to find gaps"
+                ],
+                
+                "null_handling_examples": [
+                    "COUNT non-null values: SELECT COUNT(resting_heart_rate) FROM heart_rate_data WHERE resting_heart_rate IS NOT NULL",
+                    "Average excluding nulls: SELECT AVG(total_steps) FROM steps_data WHERE total_steps > 0",
+                    "Fill gaps with NULL: WITH date_range AS (...) SELECT dr.date, s.total_steps FROM date_range dr LEFT JOIN steps_data s ON ...",
+                    "Coalesce nulls: SELECT data_date, COALESCE(total_steps, 0) as steps FROM steps_data"
                 ]
             }
             
@@ -150,7 +165,7 @@ class GarmyMCPServer:
                 }
             
             try:
-                with self.localdb.storage.get_session() as session:
+                with self.localdb.enhanced_db.get_session() as session:
                     result = session.execute(text(query))
                     
                     # Handle different result types
@@ -232,7 +247,7 @@ class GarmyMCPServer:
                     summary["metrics_summary"][metric] = metric_stats
                     
                     # Get recent sample data (last 3 records)
-                    with self.localdb.storage.get_session() as session:
+                    with self.localdb.enhanced_db.get_session() as session:
                         # Use auto-detection instead of hardcoded mapping
                         inspector = inspect(session.bind)
                         available_tables = inspector.get_table_names()
@@ -427,6 +442,13 @@ ORDER BY data_date;
 - Provide actionable insights
 - Use visualizable data formats where helpful
 
+## ⚠️ Important: Handle Missing Data
+- **Many fields can be NULL** - always check for missing values
+- **Date gaps are normal** - not all metrics recorded daily
+- **Use IS NOT NULL** when filtering for actual measurements
+- **Use COALESCE(field, 0)** to treat NULL as zero if appropriate
+- **Count non-null values**: `COUNT(field_name)` vs `COUNT(*)`
+
 Start your analysis now using the SQL queries above and the available tools.
             """.strip()
         
@@ -523,7 +545,7 @@ Explore the data using these queries and provide insights about the user's activ
 def create_server(db_path: str = None) -> GarmyMCPServer:
     """Create and return MCP server instance."""
     if db_path is None:
-        db_path = Path.home() / '.garmy' / 'localdb.db'
+        db_path = Path.home() / '.garmy' / 'health.db'
     else:
         db_path = Path(db_path)
     
@@ -567,14 +589,16 @@ for integration with Claude Desktop and other MCP clients.
     logger.info("Starting Garmy LocalDB MCP Server...")
     
     # Get database path from environment or command line
-    db_path = os.getenv('GARMY_DB_PATH')
+    db_path = os.getenv('GARMY_LOCALDB_PATH') or os.getenv('GARMY_DB_PATH')
     if not db_path and len(sys.argv) > 1:
         db_path = sys.argv[1]
     
     if db_path:
         logger.info(f"Using database path: {db_path}")
     else:
-        logger.info("Using default database path: ~/.garmy/localdb.db")
+        # Use same default as CLI
+        db_path = str(Path.home() / '.garmy' / 'health.db')
+        logger.info(f"Using default database path: {db_path}")
     
     try:
         # Create and run server

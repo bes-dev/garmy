@@ -17,7 +17,7 @@ class LocalDBConfig:
     """Configuration for LocalDB operations with validation and loading capabilities."""
 
     # Database settings
-    database_path: str = "garmy_local.db"
+    database_path: str = "~/.garmy/health.db"
     echo_sql: bool = False
     auto_create_tables: bool = True
     backup_before_migration: bool = True
