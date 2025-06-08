@@ -36,7 +36,7 @@ class GarmyMCPServer:
         @self.mcp.tool()
         def get_database_schema() -> Dict[str, Any]:
             """Get complete database schema with tables, columns, and relationships."""
-            inspector = inspect(self.localdb.enhanced_db.engine)
+            inspector = inspect(self.localdb.enhanced_db.db_manager.engine)
             
             schema = {"tables": {}, "semantics": {}}
             
@@ -165,7 +165,7 @@ class GarmyMCPServer:
                 }
             
             try:
-                with self.localdb.enhanced_db.get_session() as session:
+                with self.localdb.enhanced_db.db_manager.get_session() as session:
                     result = session.execute(text(query))
                     
                     # Handle different result types
@@ -247,7 +247,7 @@ class GarmyMCPServer:
                     summary["metrics_summary"][metric] = metric_stats
                     
                     # Get recent sample data (last 3 records)
-                    with self.localdb.enhanced_db.get_session() as session:
+                    with self.localdb.enhanced_db.db_manager.get_session() as session:
                         # Use auto-detection instead of hardcoded mapping
                         inspector = inspect(session.bind)
                         available_tables = inspector.get_table_names()

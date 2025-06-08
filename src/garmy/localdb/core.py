@@ -1,26 +1,46 @@
-"""Compact enhanced LocalDB with normalized storage - all in one file."""
+"""Refactored LocalDB with clean architecture and separation of concerns."""
 
 import asyncio
+import json
 import logging
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Callable
+from typing import Any, Dict, List, Optional, Union, Callable, Protocol
 
-from sqlalchemy import Column, Date, DateTime, String, Integer, Float, Text, Boolean, create_engine, MetaData
+from sqlalchemy import Column, Date, DateTime, String, Integer, Float, Text, create_engine, MetaData
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import Session, sessionmaker
 
 from garmy.auth.client import AuthClient
 from garmy.core.client import APIClient
 from garmy.core.discovery import MetricDiscovery
-from garmy.core.registry import MetricRegistry
+from .exceptions import DatabaseError, SyncError, ValidationError
 
 logger = logging.getLogger(__name__)
-Base = declarative_base()
+
+# Global base for shared tables like User
+GlobalBase = declarative_base()
 
 
-class User(Base):
+@dataclass
+class SyncResult:
+    total_success: int = 0
+    total_failed: int = 0
+    total_skipped: int = 0
+    metrics_synced: Dict[str, Dict[str, int]] = None
+    errors: List[str] = None
+    
+    def __post_init__(self):
+        if self.metrics_synced is None:
+            self.metrics_synced = {}
+        if self.errors is None:
+            self.errors = []
+
+
+class User(GlobalBase):
     __tablename__ = 'users'
     user_id = Column(String(50), primary_key=True)
     email = Column(String(255), unique=True, nullable=False)
@@ -28,293 +48,328 @@ class User(Base):
     last_sync = Column(DateTime, nullable=True)
 
 
-def create_table_for_metric(metric_name: str, config: Any) -> type:
-    """Create normalized table for metric based on its type."""
+class MetricExtractor(ABC):
+    """Abstract base for metric data extractors."""
     
-    # Base columns for all metrics
-    attrs = {
-        '__tablename__': f"{metric_name}_data",
-        'id': Column(Integer, primary_key=True, autoincrement=True),
-        'user_id': Column(String(50), nullable=False),
-        'data_date': Column(Date, nullable=False),
-        'created_at': Column(DateTime, default=datetime.utcnow),
+    @abstractmethod
+    def extract(self, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        """Extract data from API response for storage."""
+        pass
+
+
+class ActivityExtractor(MetricExtractor):
+    def extract(self, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        # Activities API returns a list of ActivitySummary instances
+        if not api_data or not isinstance(api_data, list) or len(api_data) == 0:
+            return {}
+        
+        # For activities, we store as JSON to preserve all data
+        # Activities are complex with many optional fields and nested data
+        activities_data = []
+        
+        for activity in api_data:
+            # Convert ActivitySummary dataclass to dict for JSON storage
+            if hasattr(activity, '__dataclass_fields__'):
+                activity_dict = {}
+                for field_name in activity.__dataclass_fields__:
+                    value = getattr(activity, field_name, None)
+                    # Handle nested dicts and convert datetime objects
+                    if hasattr(value, 'isoformat'):  # datetime objects
+                        activity_dict[field_name] = value.isoformat()
+                    else:
+                        activity_dict[field_name] = value
+                activities_data.append(activity_dict)
+            else:
+                # Fallback for unexpected data structure
+                activities_data.append(str(activity))
+        
+        return {
+            'activities_json': json.dumps(activities_data, default=self._json_serializer),
+            'activity_count': len(activities_data),
+            'latest_activity_date': self._get_latest_activity_date(api_data) if activities_data else None,
+        }
+    
+    def _get_latest_activity_date(self, api_data):
+        """Extract the latest activity date from the activities list."""
+        if not api_data or not isinstance(api_data, list):
+            return None
+        
+        latest_date = None
+        for activity in api_data:
+            activity_date = getattr(activity, 'activity_date', None)
+            if activity_date:
+                if isinstance(activity_date, str):
+                    if latest_date is None or activity_date > latest_date:
+                        latest_date = activity_date
+                elif hasattr(activity_date, 'isoformat'):
+                    date_str = activity_date.isoformat()
+                    if latest_date is None or date_str > latest_date:
+                        latest_date = date_str
+        
+        return latest_date
+    
+    def _json_serializer(self, obj):
+        """JSON serializer for non-standard types."""
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+class SleepExtractor(MetricExtractor):
+    def extract(self, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        sleep_summary = getattr(api_data, 'sleep_summary', None) if api_data else None
+        if not sleep_summary:
+            return {}
+        
+        def convert_timestamp(ts):
+            return datetime.fromtimestamp(ts / 1000) if ts is not None else None
+        
+        return {
+            'sleep_time_seconds': getattr(sleep_summary, 'sleep_time_seconds', None),
+            'deep_sleep_seconds': getattr(sleep_summary, 'deep_sleep_seconds', None),
+            'light_sleep_seconds': getattr(sleep_summary, 'light_sleep_seconds', None),
+            'rem_sleep_seconds': getattr(sleep_summary, 'rem_sleep_seconds', None),
+            'awake_sleep_seconds': getattr(sleep_summary, 'awake_sleep_seconds', None),
+            'sleep_start_timestamp_gmt': convert_timestamp(getattr(sleep_summary, 'sleep_start_timestamp_gmt', None)),
+            'sleep_end_timestamp_gmt': convert_timestamp(getattr(sleep_summary, 'sleep_end_timestamp_gmt', None)),
+        }
+
+
+class BodyBatteryExtractor(MetricExtractor):
+    def extract(self, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        summary = api_data.to_summary() if hasattr(api_data, 'to_summary') else None
+        if not summary:
+            return {}
+        
+        data = {
+            'min_value': summary.lowest_level,
+            'max_value': summary.highest_level,
+            'avg_value': None,
+            'resting_value': summary.start_level,
+        }
+        
+        if hasattr(api_data, 'body_battery_values_array') and api_data.body_battery_values_array:
+            data['values_json'] = json.dumps(api_data.body_battery_values_array, default=self._json_serializer)
+        
+        return data
+    
+    def _json_serializer(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+class GenericSummaryExtractor(MetricExtractor):
+    """Generic extractor for heart_rate, stress, respiration."""
+    
+    def __init__(self, summary_attr: str, field_mapping: Dict[str, str]):
+        self.summary_attr = summary_attr
+        self.field_mapping = field_mapping
+    
+    def extract(self, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        summary = getattr(api_data, self.summary_attr, None) if api_data else None
+        if not summary:
+            return {}
+        
+        result = {}
+        for key, field in self.field_mapping.items():
+            if field is not None:
+                result[key] = getattr(summary, field, None)
+            else:
+                result[key] = None
+        return result
+
+
+class StepsExtractor(MetricExtractor):
+    def extract(self, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        daily_steps_list = getattr(api_data, 'daily_steps', None) if api_data else None
+        if not daily_steps_list or not isinstance(daily_steps_list, list):
+            return {}
+        
+        # Find the correct date's data from the list
+        target_steps = None
+        if target_date:
+            for daily_step in daily_steps_list:
+                if hasattr(daily_step, 'calendar_date') and daily_step.calendar_date == target_date:
+                    target_steps = daily_step
+                    break
+        
+        # If no exact match or no target_date, take the last item (most recent)
+        if not target_steps and daily_steps_list:
+            target_steps = daily_steps_list[-1]
+        
+        if not target_steps:
+            return {}
+        
+        return {
+            'total_steps': getattr(target_steps, 'total_steps', None),
+            'step_goal': getattr(target_steps, 'step_goal', None),
+            'total_distance': getattr(target_steps, 'total_distance', None),
+            'daily_average': getattr(api_data.aggregations, 'daily_average', None) if hasattr(api_data, 'aggregations') else None,
+        }
+
+
+class HRVExtractor(MetricExtractor):
+    def extract(self, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        hrv_summary = getattr(api_data, 'hrv_summary', None) if api_data else None
+        if not hrv_summary:
+            return {}
+        
+        return {
+            'weekly_avg': getattr(hrv_summary, 'weekly_avg', None),
+            'last_night_avg': getattr(hrv_summary, 'last_night_avg', None),
+            'last_night_5_min_high': getattr(hrv_summary, 'last_night_5_min_high', None),
+            'status': getattr(hrv_summary, 'status', None),
+            'feedback_phrase': getattr(hrv_summary, 'feedback_phrase', None),
+        }
+
+
+class MetricExtractorFactory:
+    """Factory for creating metric extractors."""
+    
+    _extractors = {
+        'activities': ActivityExtractor(),
+        'sleep': SleepExtractor(),
+        'body_battery': BodyBatteryExtractor(),
+        'steps': StepsExtractor(),
+        'hrv': HRVExtractor(),
+        'heart_rate': GenericSummaryExtractor('heart_rate_summary', {
+            'min_value': 'min_heart_rate',
+            'max_value': 'max_heart_rate',
+            'avg_value': None,
+            'resting_value': 'resting_heart_rate'
+        }),
+        'respiration': GenericSummaryExtractor('respiration_summary', {
+            'min_value': 'lowest_respiration_value',
+            'max_value': 'highest_respiration_value',
+            'avg_value': 'avg_waking_respiration_value',
+            'resting_value': 'avg_sleep_respiration_value'
+        }),
+        'stress': GenericSummaryExtractor('stress_summary', {
+            'min_value': 'min_stress_level',
+            'max_value': 'max_stress_level',
+            'avg_value': 'average_stress_level',
+            'resting_value': 'rest_stress_level'
+        }),
     }
     
-    # Metric-specific columns based on known patterns
-    if metric_name == 'activities':
-        attrs.update({
-            'activity_id': Column(String(50)),
-            'activity_name': Column(String(255)),
-            'sport_type': Column(String(100)),
-            'duration': Column(Integer),
-            'distance': Column(Float),
-            'calories': Column(Integer),
-        })
-    elif metric_name == 'sleep':
-        attrs.update({
-            'sleep_time_seconds': Column(Integer),
-            'deep_sleep_seconds': Column(Integer),
-            'light_sleep_seconds': Column(Integer),
-            'rem_sleep_seconds': Column(Integer),
-            'awake_sleep_seconds': Column(Integer),
-            'sleep_start_timestamp_gmt': Column(DateTime),
-            'sleep_end_timestamp_gmt': Column(DateTime),
-        })
-    elif metric_name in ['heart_rate', 'body_battery', 'stress', 'respiration']:
-        attrs.update({
-            'min_value': Column(Integer),
-            'max_value': Column(Integer),
-            'avg_value': Column(Integer),
-            'resting_value': Column(Integer),
-            'values_json': Column(Text),  # For intraday data
-        })
-    elif metric_name == 'steps':
-        attrs.update({
-            'total_steps': Column(Integer),
-            'step_goal': Column(Integer),
-            'total_distance': Column(Integer),
-            'daily_average': Column(Integer),
-        })
-    elif metric_name == 'hrv':
-        attrs.update({
-            'weekly_avg': Column(Integer),
-            'last_night_avg': Column(Integer),
-            'last_night_5_min_high': Column(Integer),
-            'status': Column(String(50)),
-            'feedback_phrase': Column(Text),
-        })
-    else:
-        # Generic columns for other metrics
-        attrs.update({
-            'metric_value': Column(Float),
-            'metric_data': Column(Text),  # JSON for complex data
-        })
-    
-    return type(f"{metric_name.title()}Data", (Base,), attrs)
+    @classmethod
+    def get_extractor(cls, metric_name: str) -> Optional[MetricExtractor]:
+        return cls._extractors.get(metric_name)
 
 
-def extract_data_for_storage(metric_name: str, api_data: Any, target_date: str = None) -> Dict[str, Any]:
-    """Extract data from API response for storage.
+class TableSchemaBuilder:
+    """Builds table schemas for different metric types."""
     
-    Args:
-        metric_name: Name of the metric
-        api_data: API response data
-        target_date: Target date in YYYY-MM-DD format for filtering
-    """
-    if not api_data:
-        return {}
+    def __init__(self, metadata: MetaData):
+        self.metadata = metadata
+        self.base = declarative_base(metadata=metadata)
     
-    data = {}
-    
-    try:
-        if metric_name == 'activities':
-            # Activities returns a list directly
-            if api_data and isinstance(api_data, list) and len(api_data) > 0:
-                activity = api_data[0]  # Take first activity
-                data = {
-                    'activity_id': getattr(activity, 'activity_id', None),
-                    'activity_name': getattr(activity, 'activity_name', None),
-                    'sport_type': getattr(activity, 'sport_type_key', None),
-                    'duration': getattr(activity, 'duration', None),
-                    'distance': getattr(activity, 'distance', None),
-                    'calories': getattr(activity, 'calories', None),
-                }
-            else:
-                data = {}
-        elif metric_name == 'sleep':
-            # Sleep data is in sleep_summary
-            sleep_summary = getattr(api_data, 'sleep_summary', None) if api_data else None
-            if sleep_summary:
-                # Convert timestamps from milliseconds to datetime
-                def convert_timestamp(ts):
-                    if ts is not None:
-                        return datetime.fromtimestamp(ts / 1000)
-                    return None
-                
-                data = {
-                    'sleep_time_seconds': getattr(sleep_summary, 'sleep_time_seconds', None),
-                    'deep_sleep_seconds': getattr(sleep_summary, 'deep_sleep_seconds', None),
-                    'light_sleep_seconds': getattr(sleep_summary, 'light_sleep_seconds', None),
-                    'rem_sleep_seconds': getattr(sleep_summary, 'rem_sleep_seconds', None),
-                    'awake_sleep_seconds': getattr(sleep_summary, 'awake_sleep_seconds', None),
-                    'sleep_start_timestamp_gmt': convert_timestamp(getattr(sleep_summary, 'sleep_start_timestamp_gmt', None)),
-                    'sleep_end_timestamp_gmt': convert_timestamp(getattr(sleep_summary, 'sleep_end_timestamp_gmt', None)),
-                }
-            else:
-                data = {}
-        elif metric_name in ['heart_rate', 'body_battery', 'stress', 'respiration']:
-            # Extract summary data and store intraday as JSON
-            import json
-            
-            def json_serializer(obj):
-                if isinstance(obj, datetime):
-                    return obj.isoformat()
-                elif isinstance(obj, date):
-                    return obj.isoformat()
-                raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-            
-            # Different extraction logic per metric type
-            if metric_name == 'body_battery':
-                # ИСПОЛЬЗУЕМ to_summary() для правильного извлечения Body Battery данных
-                summary = api_data.to_summary() if hasattr(api_data, 'to_summary') else None
-                if summary:
-                    data = {
-                        'min_value': summary.lowest_level,     # Минимальный уровень энергии за день
-                        'max_value': summary.highest_level,    # Максимальный уровень энергии за день  
-                        'avg_value': None,                     # API не предоставляет среднее для Body Battery
-                        'resting_value': summary.start_level,  # Уровень в начале дня
-                    }
-                    # Store body battery values if present
-                    if hasattr(api_data, 'body_battery_values_array') and api_data.body_battery_values_array:
-                        data['values_json'] = json.dumps(api_data.body_battery_values_array, default=json_serializer)
-                else:
-                    data = {}
-            elif metric_name == 'stress':
-                data = {
-                    'min_value': None,
-                    'max_value': getattr(api_data, 'max_stress_level', None),
-                    'avg_value': getattr(api_data, 'avg_stress_level', None),
-                    'resting_value': None,
-                }
-                # Store stress values if present
-                if hasattr(api_data, 'stress_values_array') and api_data.stress_values_array:
-                    data['values_json'] = json.dumps(api_data.stress_values_array, default=json_serializer)
-            elif metric_name == 'heart_rate':
-                # Heart rate data is in heart_rate_summary
-                hr_summary = getattr(api_data, 'heart_rate_summary', None) if api_data else None
-                if hr_summary:
-                    data = {
-                        'min_value': getattr(hr_summary, 'min_heart_rate', None),
-                        'max_value': getattr(hr_summary, 'max_heart_rate', None),
-                        'avg_value': None,  # Not in summary
-                        'resting_value': getattr(hr_summary, 'resting_heart_rate', None),
-                    }
-                    # Store intraday values as JSON if present
-                    if hasattr(api_data, 'heart_rate_values_array') and api_data.heart_rate_values_array:
-                        data['values_json'] = json.dumps(api_data.heart_rate_values_array, default=json_serializer)
-                else:
-                    data = {}
-            elif metric_name == 'respiration':
-                # Respiration data is in respiration_summary
-                resp_summary = getattr(api_data, 'respiration_summary', None) if api_data else None
-                if resp_summary:
-                    # ИСПРАВЛЕНО: используем правильные названия полей из dataclass
-                    data = {
-                        'min_value': getattr(resp_summary, 'lowest_respiration_value', None),
-                        'max_value': getattr(resp_summary, 'highest_respiration_value', None),
-                        'avg_value': getattr(resp_summary, 'avg_waking_respiration_value', None),
-                        'resting_value': getattr(resp_summary, 'avg_sleep_respiration_value', None),  # Используем сон как "покой"
-                    }
-                    # Store respiration values as JSON if present
-                    if hasattr(api_data, 'respiration_values_array') and api_data.respiration_values_array:
-                        data['values_json'] = json.dumps(api_data.respiration_values_array, default=json_serializer)
-                else:
-                    data = {}
-        elif metric_name == 'steps':
-            # Steps data has daily_steps (list) and aggregations structure
-            daily_steps_list = getattr(api_data, 'daily_steps', None) if api_data else None
-            if daily_steps_list and isinstance(daily_steps_list, list):
-                # Find the correct date's data from the list
-                target_steps = None
-                if target_date:
-                    # Look for exact date match
-                    for daily_step in daily_steps_list:
-                        if hasattr(daily_step, 'calendar_date') and daily_step.calendar_date == target_date:
-                            target_steps = daily_step
-                            break
-                
-                # If no exact match or no target_date, take the last item (most recent)
-                if not target_steps and daily_steps_list:
-                    target_steps = daily_steps_list[-1]
-                
-                if target_steps:
-                    data = {
-                        'total_steps': getattr(target_steps, 'total_steps', None),
-                        'step_goal': getattr(target_steps, 'step_goal', None),
-                        'total_distance': getattr(target_steps, 'total_distance', None),
-                        'daily_average': getattr(api_data.aggregations, 'daily_average', None) if hasattr(api_data, 'aggregations') else None,
-                    }
-                else:
-                    data = {}
-            else:
-                data = {}
-        elif metric_name == 'hrv':
-            # HRV data is in hrv_summary
-            hrv_summary = getattr(api_data, 'hrv_summary', None) if api_data else None
-            if hrv_summary:
-                data = {
-                    'weekly_avg': getattr(hrv_summary, 'weekly_avg', None),
-                    'last_night_avg': getattr(hrv_summary, 'last_night_avg', None),
-                    'last_night_5_min_high': getattr(hrv_summary, 'last_night_5_min_high', None),
-                    'status': getattr(hrv_summary, 'status', None),
-                    'feedback_phrase': getattr(hrv_summary, 'feedback_phrase', None),
-                }
-            else:
-                data = {}
+    def create_table_for_metric(self, metric_name: str, config: Any) -> type:
+        base_attrs = {
+            '__tablename__': f"{metric_name}_data",
+            'id': Column(Integer, primary_key=True, autoincrement=True),
+            'user_id': Column(String(50), nullable=False),
+            'data_date': Column(Date, nullable=False),
+            'created_at': Column(DateTime, default=datetime.utcnow),
+        }
+        
+        schemas = {
+            'activities': {
+                'activities_json': Column(Text),  # JSON array of all activities
+                'activity_count': Column(Integer),  # Number of activities stored
+                'latest_activity_date': Column(String(20)),  # Date of most recent activity
+            },
+            'sleep': {
+                'sleep_time_seconds': Column(Integer),
+                'deep_sleep_seconds': Column(Integer),
+                'light_sleep_seconds': Column(Integer),
+                'rem_sleep_seconds': Column(Integer),
+                'awake_sleep_seconds': Column(Integer),
+                'sleep_start_timestamp_gmt': Column(DateTime),
+                'sleep_end_timestamp_gmt': Column(DateTime),
+            },
+            'hrv': {
+                'weekly_avg': Column(Integer),
+                'last_night_avg': Column(Integer),
+                'last_night_5_min_high': Column(Integer),
+                'status': Column(String(50)),
+                'feedback_phrase': Column(Text),
+            },
+            'steps': {
+                'total_steps': Column(Integer),
+                'step_goal': Column(Integer),
+                'total_distance': Column(Integer),
+                'daily_average': Column(Integer),
+            }
+        }
+        
+        summary_metrics = ['heart_rate', 'body_battery', 'stress', 'respiration']
+        if metric_name in summary_metrics:
+            schema = {
+                'min_value': Column(Integer),
+                'max_value': Column(Integer),
+                'avg_value': Column(Integer),
+                'resting_value': Column(Integer),
+                'values_json': Column(Text),
+            }
         else:
-            # Generic handling - extract basic numeric value and store full data as JSON
-            import json
-            if hasattr(api_data, '__dict__'):
-                # Convert datetime objects to strings for JSON serialization
-                def json_serializer(obj):
-                    if isinstance(obj, datetime):
-                        return obj.isoformat()
-                    elif isinstance(obj, date):
-                        return obj.isoformat()
-                    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-                
-                data = {
-                    'metric_value': None,  # Extract main value if possible
-                    'metric_data': json.dumps(api_data.__dict__, default=json_serializer),
-                }
-            else:
-                data = {'metric_data': str(api_data)}
-    
-    except Exception as e:
-        logger.error(f"Error extracting data for {metric_name}: {e}")
-        return {}
-    
-    return data
+            schema = schemas.get(metric_name, {
+                'metric_value': Column(Float),
+                'metric_data': Column(Text),
+            })
+        
+        base_attrs.update(schema)
+        return type(f"{metric_name.title()}Data", (self.base,), base_attrs)
 
 
-class LocalDB:
-    """Compact enhanced LocalDB with normalized storage."""
+class DataProcessor:
+    """Handles data extraction and processing for metrics."""
+    
+    def __init__(self):
+        self.extractor_factory = MetricExtractorFactory()
+    
+    def extract_data_for_storage(self, metric_name: str, api_data: Any, target_date: str = None) -> Dict[str, Any]:
+        """Extract data from API response for storage."""
+        if not api_data:
+            return {}
+        
+        try:
+            extractor = self.extractor_factory.get_extractor(metric_name)
+            if extractor:
+                return extractor.extract(api_data, target_date)
+            
+            # Fallback for unsupported metrics
+            return self._extract_generic(api_data)
+            
+        except Exception as e:
+            logger.error(f"Error extracting data for {metric_name}: {e}")
+            return {}
+    
+    def _extract_generic(self, api_data: Any) -> Dict[str, Any]:
+        """Generic extraction for unsupported metrics."""
+        if hasattr(api_data, '__dict__'):
+            return {
+                'metric_value': None,
+                'metric_data': json.dumps(api_data.__dict__, default=self._json_serializer),
+            }
+        return {'metric_data': str(api_data)}
+    
+    def _json_serializer(self, obj):
+        if isinstance(obj, (datetime, date)):
+            return obj.isoformat()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+class DatabaseManager:
+    """Manages database connections and session lifecycle."""
     
     def __init__(self, db_path: Union[str, Path]):
         self.db_path = Path(db_path).expanduser()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Setup database
         self.engine = create_engine(f"sqlite:///{self.db_path}", connect_args={'check_same_thread': False})
         self.SessionLocal = sessionmaker(bind=self.engine)
-        
-        # Discover metrics and create tables
-        self.metric_configs = MetricDiscovery.discover_metrics()
-        self.metric_tables = {}
-        self._create_all_tables()
-        
-        # Initialize API client components
-        self._auth_client = None
-        self._api_client = None
-    
-    def _create_all_tables(self):
-        """Create all tables for discovered metrics."""
-        try:
-            # Create user table
-            Base.metadata.create_all(self.engine, tables=[User.__table__])
-            
-            # Create metric tables
-            for metric_name, config in self.metric_configs.items():
-                table_class = create_table_for_metric(metric_name, config)
-                self.metric_tables[metric_name] = table_class
-                
-            # Create all metric tables
-            Base.metadata.create_all(self.engine)
-            
-            logger.info(f"Created tables for {len(self.metric_tables)} metrics")
-            
-        except Exception as e:
-            logger.error(f"Failed to create tables: {e}")
+        self.metadata = MetaData()
     
     @contextmanager
     def get_session(self) -> Session:
@@ -329,58 +384,62 @@ class LocalDB:
         finally:
             session.close()
     
-    def add_user(self, user_id: str, email: str) -> None:
-        """Add user to database."""
-        with self.get_session() as session:
-            session.merge(User(user_id=user_id, email=email))
+    def create_tables(self, metric_tables: Dict[str, type]):
+        """Create all tables in the database."""
+        try:
+            # Create the User table with its own metadata
+            GlobalBase.metadata.create_all(self.engine, tables=[User.__table__])
+            # Create metric tables with their own metadata
+            self.metadata.create_all(self.engine)
+            logger.info(f"Created tables for {len(metric_tables)} metrics")
+        except Exception as e:
+            raise DatabaseError(f"Failed to create tables: {e}")
+
+
+class MetricRepository:
+    """Repository for metric data operations."""
     
-    def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Get user from database."""
-        with self.get_session() as session:
-            user = session.query(User).filter_by(user_id=user_id).first()
-            return {'user_id': user.user_id, 'email': user.email} if user else None
+    def __init__(self, db_manager: DatabaseManager, data_processor: DataProcessor):
+        self.db_manager = db_manager
+        self.data_processor = data_processor
+        self.metric_tables = {}
     
-    def list_users(self) -> List[Dict[str, Any]]:
-        """List all users."""
-        with self.get_session() as session:
-            return [{'user_id': u.user_id, 'email': u.email} for u in session.query(User).all()]
+    def initialize_tables(self):
+        """Initialize metric tables from discovered metrics."""
+        metric_configs = MetricDiscovery.discover_metrics()
+        schema_builder = TableSchemaBuilder(self.db_manager.metadata)
+        
+        for metric_name, config in metric_configs.items():
+            table_class = schema_builder.create_table_for_metric(metric_name, config)
+            self.metric_tables[metric_name] = table_class
+            
+        self.db_manager.create_tables(self.metric_tables)
     
     def store_metric(self, user_id: str, metric_type: str, data_date: Union[str, date], api_data: Any) -> bool:
         """Store metric data in normalized table."""
+        if metric_type not in self.metric_tables:
+            logger.warning(f"No table for metric {metric_type}")
+            return False
+        
         try:
-            if metric_type not in self.metric_tables:
-                logger.warning(f"No table for metric {metric_type}")
-                return False
-            
-            # Convert date
+            # Convert date and extract data
             if isinstance(data_date, str):
                 data_date = datetime.strptime(data_date, "%Y-%m-%d").date()
             
-            # Extract data for storage
             target_date_str = data_date.strftime("%Y-%m-%d")
-            extracted_data = extract_data_for_storage(metric_type, api_data, target_date_str)
+            extracted_data = self.data_processor.extract_data_for_storage(metric_type, api_data, target_date_str)
+            
             if not extracted_data:
                 logger.debug(f"No data to store for {metric_type}")
-                return True  # Not an error, just no data
+                return True
             
-            # Add base fields
-            extracted_data.update({
-                'user_id': user_id,
-                'data_date': data_date,
-            })
+            # Add base fields and store
+            extracted_data.update({'user_id': user_id, 'data_date': data_date})
             
-            # Store in database
             table_class = self.metric_tables[metric_type]
-            with self.get_session() as session:
-                # Delete existing record for this user/date/metric
-                session.query(table_class).filter_by(
-                    user_id=user_id,
-                    data_date=data_date
-                ).delete()
-                
-                # Insert new record
-                record = table_class(**extracted_data)
-                session.add(record)
+            with self.db_manager.get_session() as session:
+                session.query(table_class).filter_by(user_id=user_id, data_date=data_date).delete()
+                session.add(table_class(**extracted_data))
             
             logger.debug(f"Stored {metric_type} data for {user_id} on {data_date}")
             return True
@@ -389,76 +448,72 @@ class LocalDB:
             logger.error(f"Error storing {metric_type} data: {e}")
             return False
     
-    def get_metric(self, user_id: str, metric_type: str, data_date: Union[str, date]) -> Optional[Any]:
+    def get_metric(self, user_id: str, metric_type: str, data_date: Union[str, date]) -> Optional[Dict[str, Any]]:
         """Retrieve metric data from normalized table."""
+        if metric_type not in self.metric_tables:
+            return None
+        
         try:
-            if metric_type not in self.metric_tables:
-                return None
-            
             if isinstance(data_date, str):
                 data_date = datetime.strptime(data_date, "%Y-%m-%d").date()
             
             table_class = self.metric_tables[metric_type]
-            with self.get_session() as session:
-                record = session.query(table_class).filter_by(
-                    user_id=user_id,
-                    data_date=data_date
-                ).first()
+            with self.db_manager.get_session() as session:
+                record = session.query(table_class).filter_by(user_id=user_id, data_date=data_date).first()
+                return {c.name: getattr(record, c.name) for c in record.__table__.columns} if record else None
                 
-                if record:
-                    # Convert back to dict
-                    return {c.name: getattr(record, c.name) for c in record.__table__.columns}
-            
-            return None
-            
         except Exception as e:
             logger.error(f"Error retrieving {metric_type} data: {e}")
             return None
     
     def has_metric(self, user_id: str, metric_type: str, data_date: Union[str, date]) -> bool:
         """Check if metric data already exists."""
+        if metric_type not in self.metric_tables:
+            return False
+        
         try:
-            if metric_type not in self.metric_tables:
-                return False
-            
             if isinstance(data_date, str):
                 data_date = datetime.strptime(data_date, "%Y-%m-%d").date()
             
             table_class = self.metric_tables[metric_type]
-            with self.get_session() as session:
-                count = session.query(table_class).filter_by(
-                    user_id=user_id,
-                    data_date=data_date
-                ).count()
-                
-                return count > 0
+            with self.db_manager.get_session() as session:
+                return session.query(table_class).filter_by(user_id=user_id, data_date=data_date).count() > 0
                 
         except Exception as e:
             logger.error(f"Error checking {metric_type} existence: {e}")
             return False
+
+
+class UserRepository:
+    """Repository for user data operations."""
     
-    def get_stats(self) -> Dict[str, Any]:
-        """Get database statistics."""
-        try:
-            with self.get_session() as session:
-                stats = {
-                    'total_metrics': len(self.metric_tables),
-                    'users': session.query(User).count(),
-                    'metrics': {}
-                }
-                
-                total_records = 0
-                for metric_name, table_class in self.metric_tables.items():
-                    count = session.query(table_class).count()
-                    stats['metrics'][metric_name] = count
-                    total_records += count
-                
-                stats['total_records'] = total_records
-                return stats
-                
-        except Exception as e:
-            logger.error(f"Error getting stats: {e}")
-            return {'error': str(e)}
+    def __init__(self, db_manager: DatabaseManager):
+        self.db_manager = db_manager
+    
+    def add_user(self, user_id: str, email: str) -> None:
+        """Add user to database."""
+        with self.db_manager.get_session() as session:
+            session.merge(User(user_id=user_id, email=email))
+    
+    def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user from database."""
+        with self.db_manager.get_session() as session:
+            user = session.query(User).filter_by(user_id=user_id).first()
+            return {'user_id': user.user_id, 'email': user.email} if user else None
+    
+    def list_users(self) -> List[Dict[str, Any]]:
+        """List all users."""
+        with self.db_manager.get_session() as session:
+            return [{'user_id': u.user_id, 'email': u.email} for u in session.query(User).all()]
+
+
+class SyncService:
+    """Service for synchronizing data with Garmin API."""
+    
+    def __init__(self, metric_repository: MetricRepository):
+        self.metric_repository = metric_repository
+        self._auth_client = None
+        self._api_client = None
     
     def _get_api_client(self) -> APIClient:
         """Get API client instance."""
@@ -466,40 +521,37 @@ class LocalDB:
             if not self._auth_client:
                 self._auth_client = AuthClient()
             self._api_client = APIClient(auth_client=self._auth_client)
-        
         return self._api_client
     
     async def sync_user_data(self, user_id: str, start_date: date, end_date: date, 
-                            progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
+                            progress_callback: Optional[Callable] = None) -> SyncResult:
         """Sync user data for date range."""
         try:
             api_client = self._get_api_client()
+            available_metrics = list(self.metric_repository.metric_tables.keys())
             
-            # Get available metrics
-            available_metrics = list(self.metric_tables.keys())
-            logger.info(f"Syncing {len(available_metrics)} metrics")
+            # Separate date-based metrics from list-based metrics
+            date_based_metrics = [m for m in available_metrics if m != 'activities']
+            list_based_metrics = [m for m in available_metrics if m == 'activities']
             
-            # Build date range (reverse chronological)
+            # Build date range for date-based metrics
             date_range = []
             current = end_date
             while current >= start_date:
                 date_range.append(current)
                 current -= timedelta(days=1)
             
-            results = {
-                'metrics_synced': {m: {'success': 0, 'failed': 0, 'skipped': 0} for m in available_metrics},
-                'total_success': 0,
-                'total_failed': 0,
-                'total_skipped': 0,
-                'errors': []
-            }
+            result = SyncResult()
+            result.metrics_synced = {m: {'success': 0, 'failed': 0, 'skipped': 0} for m in available_metrics}
             
-            total_items = len(date_range) * len(available_metrics)
+            # Calculate total items (date-based metrics + list-based metrics)
+            total_items = len(date_range) * len(date_based_metrics) + len(list_based_metrics)
             completed_items = 0
             
+            # Sync date-based metrics
             for date_idx, sync_date in enumerate(date_range):
-                for metric_idx, metric_type in enumerate(available_metrics):
-                    completed_items = date_idx * len(available_metrics) + metric_idx
+                for metric_idx, metric_type in enumerate(date_based_metrics):
+                    completed_items = date_idx * len(date_based_metrics) + metric_idx
                     
                     if progress_callback:
                         progress_callback({
@@ -510,54 +562,162 @@ class LocalDB:
                         })
                     
                     try:
-                        # Check if data already exists (skip mechanism)
-                        if self.has_metric(user_id, metric_type, sync_date):
-                            results['metrics_synced'][metric_type]['skipped'] += 1
-                            results['total_skipped'] += 1
-                            logger.debug(f"⏭ {metric_type} skipped for {sync_date} (already exists)")
+                        # Check if data exists
+                        if self.metric_repository.has_metric(user_id, metric_type, sync_date):
+                            result.metrics_synced[metric_type]['skipped'] += 1
+                            result.total_skipped += 1
                             continue
                         
-                        # Get data from API
+                        # Get and store data
                         accessor = api_client.metrics.get(metric_type)
                         if not accessor:
-                            results['metrics_synced'][metric_type]['failed'] += 1
-                            results['total_failed'] += 1
+                            result.metrics_synced[metric_type]['failed'] += 1
+                            result.total_failed += 1
                             continue
                         
                         data = accessor.get(sync_date.isoformat())
-                        if not data:
-                            logger.debug(f"No data for {metric_type} on {sync_date}")
-                            results['metrics_synced'][metric_type]['failed'] += 1
-                            results['total_failed'] += 1
-                            continue
-                        
-                        # Store data
-                        success = self.store_metric(user_id, metric_type, sync_date, data)
-                        if success:
-                            results['metrics_synced'][metric_type]['success'] += 1
-                            results['total_success'] += 1
-                            logger.debug(f"✓ {metric_type} synced for {sync_date}")
+                        if data and self.metric_repository.store_metric(user_id, metric_type, sync_date, data):
+                            result.metrics_synced[metric_type]['success'] += 1
+                            result.total_success += 1
                         else:
-                            results['metrics_synced'][metric_type]['failed'] += 1
-                            results['total_failed'] += 1
-                            logger.debug(f"✗ {metric_type} failed for {sync_date}")
+                            result.metrics_synced[metric_type]['failed'] += 1
+                            result.total_failed += 1
                     
                     except Exception as e:
                         error_msg = f"Error syncing {metric_type} for {sync_date}: {e}"
-                        results['errors'].append(error_msg)
-                        results['metrics_synced'][metric_type]['failed'] += 1
-                        results['total_failed'] += 1
+                        result.errors.append(error_msg)
+                        result.metrics_synced[metric_type]['failed'] += 1
+                        result.total_failed += 1
                         logger.error(error_msg)
                 
-                # Small delay between dates
                 await asyncio.sleep(0.1)
             
-            logger.info(f"Sync completed: {results['total_success']} success, {results['total_failed']} failed")
-            return results
+            # Sync list-based metrics (like activities) - only once per sync
+            for metric_type in list_based_metrics:
+                completed_items += 1
+                
+                if progress_callback:
+                    progress_callback({
+                        'current_date': 'N/A (list-based)',
+                        'current_metric': metric_type,
+                        'completed_items': completed_items,
+                        'total_items': total_items,
+                    })
+                
+                try:
+                    # For activities, use the end_date as the storage date
+                    storage_date = end_date
+                    
+                    # Check if recent data exists (don't sync activities every day)
+                    if self.metric_repository.has_metric(user_id, metric_type, storage_date):
+                        result.metrics_synced[metric_type]['skipped'] += 1
+                        result.total_skipped += 1
+                        continue
+                    
+                    # Get activities accessor
+                    accessor = api_client.metrics.get(metric_type)
+                    if not accessor:
+                        result.metrics_synced[metric_type]['failed'] += 1
+                        result.total_failed += 1
+                        continue
+                    
+                    # For activities, get recent activities list instead of date-specific data
+                    if metric_type == 'activities':
+                        data = accessor.list(limit=50)  # Get recent 50 activities
+                    else:
+                        data = accessor.get()  # Fallback for other list-based metrics
+                    
+                    if data and self.metric_repository.store_metric(user_id, metric_type, storage_date, data):
+                        result.metrics_synced[metric_type]['success'] += 1
+                        result.total_success += 1
+                    else:
+                        result.metrics_synced[metric_type]['failed'] += 1
+                        result.total_failed += 1
+                
+                except Exception as e:
+                    error_msg = f"Error syncing {metric_type}: {e}"
+                    result.errors.append(error_msg)
+                    result.metrics_synced[metric_type]['failed'] += 1
+                    result.total_failed += 1
+                    logger.error(error_msg)
+            
+            logger.info(f"Sync completed: {result.total_success} success, {result.total_failed} failed")
+            return result
             
         except Exception as e:
             logger.error(f"Sync error: {e}")
-            return {'error': str(e), 'total_success': 0, 'total_failed': 0}
+            raise SyncError(f"Sync failed: {e}")
+
+
+class LocalDB:
+    """Main LocalDB facade with clean architecture."""
+    
+    def __init__(self, db_path: Union[str, Path]):
+        self.db_manager = DatabaseManager(db_path)
+        self.data_processor = DataProcessor()
+        self.metric_repository = MetricRepository(self.db_manager, self.data_processor)
+        self.user_repository = UserRepository(self.db_manager)
+        self.sync_service = SyncService(self.metric_repository)
+        
+        # Initialize tables
+        self.metric_repository.initialize_tables()
+    
+    # Delegate methods to repositories and services
+    def add_user(self, user_id: str, email: str) -> None:
+        """Add user to database."""
+        return self.user_repository.add_user(user_id, email)
+    
+    def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Get user from database."""
+        return self.user_repository.get_user(user_id)
+    
+    def list_users(self) -> List[Dict[str, Any]]:
+        """List all users."""
+        return self.user_repository.list_users()
+    
+    def store_metric(self, user_id: str, metric_type: str, data_date: Union[str, date], api_data: Any) -> bool:
+        """Store metric data."""
+        return self.metric_repository.store_metric(user_id, metric_type, data_date, api_data)
+    
+    def get_metric(self, user_id: str, metric_type: str, data_date: Union[str, date]) -> Optional[Any]:
+        """Retrieve metric data."""
+        return self.metric_repository.get_metric(user_id, metric_type, data_date)
+    
+    def has_metric(self, user_id: str, metric_type: str, data_date: Union[str, date]) -> bool:
+        """Check if metric data exists."""
+        return self.metric_repository.has_metric(user_id, metric_type, data_date)
+    
+    async def sync_user_data(self, user_id: str, start_date: date, end_date: date, 
+                            progress_callback: Optional[Callable] = None) -> SyncResult:
+        """Sync user data for date range."""
+        return await self.sync_service.sync_user_data(user_id, start_date, end_date, progress_callback)
+    
+    def get_stats(self) -> Dict[str, Any]:
+        """Get database statistics."""
+        try:
+            with self.db_manager.get_session() as session:
+                stats = {
+                    'total_metrics': len(self.metric_repository.metric_tables),
+                    'users': session.query(User).count(),
+                    'metrics': {}
+                }
+                
+                total_records = 0
+                for metric_name, table_class in self.metric_repository.metric_tables.items():
+                    try:
+                        count = session.query(table_class).count()
+                        stats['metrics'][metric_name] = count
+                        total_records += count
+                    except Exception as table_e:
+                        logger.warning(f"Cannot query {metric_name} table: {table_e}")
+                        stats['metrics'][metric_name] = "schema_mismatch"
+                
+                stats['total_records'] = total_records
+                return stats
+                
+        except Exception as e:
+            logger.error(f"Error getting stats: {e}")
+            return {'error': str(e)}
 
 
 # Legacy compatibility wrapper
@@ -587,7 +747,90 @@ class LocalDBClient:
     
     async def sync_user_data(self, user_id: str, start_date: date, end_date: date, 
                             progress_callback: Optional[Callable] = None) -> Dict[str, Any]:
-        return await self.enhanced_db.sync_user_data(user_id, start_date, end_date, progress_callback)
+        result = await self.enhanced_db.sync_user_data(user_id, start_date, end_date, progress_callback)
+        # Convert SyncResult to dict for legacy compatibility
+        return {
+            'total_success': result.total_success,
+            'total_failed': result.total_failed,
+            'total_skipped': result.total_skipped,
+            'metrics_synced': result.metrics_synced,
+            'errors': result.errors,
+            'total_records': result.total_success
+        }
     
     def get_metric_data(self, user_id: str, metric_type: str, data_date: Union[str, date]) -> Optional[Any]:
         return self.enhanced_db.get_metric(user_id, metric_type, data_date)
+    
+    def list_user_metrics(self, user_id: str) -> List[str]:
+        """List available metrics for a user."""
+        try:
+            available_metrics = []
+            with self.enhanced_db.db_manager.get_session() as session:
+                # Check each metric table for data for this user
+                for metric_name, table_class in self.enhanced_db.metric_repository.metric_tables.items():
+                    try:
+                        count = session.query(table_class).filter_by(user_id=user_id).count()
+                        if count > 0:
+                            available_metrics.append(metric_name)
+                    except Exception as table_e:
+                        logger.warning(f"Cannot query {metric_name} table for user {user_id}: {table_e}")
+            
+            return available_metrics
+        except Exception as e:
+            logger.error(f"Error listing user metrics for {user_id}: {e}")
+            return []
+    
+    def get_metric_stats(self, user_id: str, metric_type: str) -> Dict[str, Any]:
+        """Get statistics for a specific metric for a user."""
+        try:
+            if metric_type not in self.enhanced_db.metric_repository.metric_tables:
+                return {"error": f"Metric {metric_type} not found"}
+            
+            table_class = self.enhanced_db.metric_repository.metric_tables[metric_type]
+            
+            with self.enhanced_db.db_manager.get_session() as session:
+                from sqlalchemy import func, text
+                
+                # Get basic stats
+                query = session.query(
+                    func.count().label('total_records'),
+                    func.min(table_class.data_date).label('earliest_date'),
+                    func.max(table_class.data_date).label('latest_date')
+                ).filter_by(user_id=user_id)
+                
+                result = query.first()
+                
+                stats = {
+                    'metric_type': metric_type,
+                    'total_records': result.total_records if result else 0,
+                    'earliest_date': result.earliest_date.isoformat() if result and result.earliest_date else None,
+                    'latest_date': result.latest_date.isoformat() if result and result.latest_date else None,
+                }
+                
+                return stats
+                
+        except Exception as e:
+            logger.error(f"Error getting metric stats for {user_id}, {metric_type}: {e}")
+            return {"error": str(e)}
+    
+    async def sync_recent_user_data(self, user_id: str, days: int = 7) -> Dict[str, Any]:
+        """Sync recent data for a user."""
+        try:
+            end_date = date.today()
+            start_date = end_date - timedelta(days=days)
+            
+            result = await self.enhanced_db.sync_user_data(user_id, start_date, end_date)
+            
+            # Convert SyncResult to dict for compatibility
+            return {
+                'total_success': result.total_success,
+                'total_failed': result.total_failed,  
+                'total_skipped': result.total_skipped,
+                'metrics_synced': result.metrics_synced,
+                'errors': result.errors,
+                'total_records': result.total_success
+            }
+            
+        except Exception as e:
+            logger.error(f"Error syncing recent data for {user_id}: {e}")
+            return {"error": str(e)}
