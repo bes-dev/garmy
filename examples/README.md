@@ -53,6 +53,11 @@ This directory contains practical examples demonstrating how to use Garmy for ac
    python examples/sleep_phases_analysis.py
    ```
 
+8. **🏥 Health Database System (NEW!)**:
+   ```bash
+   python examples/health_db_demo.py
+   ```
+
 ## 📁 Example Files
 
 ### 🔐 `basic_auth.py`
@@ -207,6 +212,36 @@ python examples/sleep_phases_analysis.py
 - All-in-one health overview
 - Daily metrics compilation
 - Health trend analysis
+
+### 🏥 `health_db_demo.py` ⭐ **NEW!**
+**Purpose**: Complete health database system demonstration
+
+**Features**:
+- **Database synchronization** with normalized schema
+- **Progress tracking** with multiple display options (Rich, TQDM, logging)
+- **Health analytics** with sleep, activity, and wellness insights
+- **Data export** capabilities (JSON, CSV)
+- **Advanced SQL queries** for health correlations
+- **Real-time progress** updates during sync
+
+**Usage**:
+```bash
+# Set your credentials
+export GARMIN_EMAIL="your_email@example.com"
+export GARMIN_PASSWORD="your_password"
+
+# Run the comprehensive demo
+python examples/health_db_demo.py
+```
+
+**What it demonstrates**:
+- 📊 Different progress reporting styles
+- 💾 Normalized database storage for efficient queries
+- 📈 Health trends and correlations analysis
+- 🏃‍♂️ Activity patterns and performance metrics
+- 😴 Sleep quality analysis with phase breakdowns
+- 📤 Data export for external analysis
+- 🔍 Advanced SQL queries for health insights
 
 ## 🛠 Usage Patterns
 

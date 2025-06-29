@@ -5,14 +5,13 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Tests](https://github.com/bes-dev/garmy/workflows/Tests/badge.svg)](https://github.com/bes-dev/garmy/actions)
 
-An AI-powered Python library for Garmin Connect API designed specifically for health data analysis and AI agent integration via Model Context Protocol (MCP). Build intelligent health assistants and data analysis tools with seamless access to Garmin's comprehensive fitness metrics.
+An AI-powered Python library for Garmin Connect API designed specifically for health data analysis and AI agent integration. Build intelligent health assistants and data analysis tools with seamless access to Garmin's comprehensive fitness metrics.
 
 **Inspired by [garth](https://github.com/matin/garth)** - This project was heavily inspired by the excellent garth library, building upon its foundation with enhanced modularity, type safety, and AI integration capabilities.
 
 ## 🎯 Key Features
 
 - **🤖 AI-First Design**: Built specifically for AI health agents and intelligent assistants
-- **🔌 MCP Integration**: Native Model Context Protocol support for seamless AI interactions
 - **🏥 Health Analytics**: Advanced data analysis capabilities for fitness and wellness insights
 - **📊 Rich Metrics**: Complete access to sleep, heart rate, stress, training readiness, and more
 - **🗣️ Natural Language**: Query health data using conversational commands
@@ -27,16 +26,12 @@ An AI-powered Python library for Garmin Connect API designed specifically for he
 pip install garmy
 ```
 
-### With MCP Support (Recommended for AI Agents)
-```bash
-pip install garmy[mcp]
-```
 
 ### Development Installation
 ```bash
 git clone https://github.com/bes-dev/garmy.git
 cd garmy
-pip install -e ".[dev,mcp]"
+pip install -e ".[dev]"
 ```
 
 ## 🚀 Quick Start
@@ -138,215 +133,6 @@ Garmy provides access to a comprehensive set of Garmin Connect metrics:
 | `calories` | Daily calorie burn data | `api_client.metrics.get('calories').get()` |
 | `activities` | Activity summaries and details | `api_client.metrics.get('activities').list(days=30)` |
 | `daily_summary` | Comprehensive daily health summary | `api_client.metrics.get('daily_summary').get()` |
-
-## 🤖 AI Health Agent Integration (MCP)
-
-Garmy is specifically designed for building **AI health agents** and intelligent assistants through native **Model Context Protocol (MCP)** integration. Transform your Garmin health data into actionable insights using natural language interactions.
-
-### What Makes Garmy AI-First?
-
-Garmy isn't just an API wrapper – it's a complete AI health agent platform that enables:
-
-- **🧠 Intelligent Health Analysis**: AI-powered insights into sleep patterns, training readiness, and recovery
-- **🗣️ Natural Language Queries**: Ask questions like "How was my sleep quality this week?" or "Am I ready for training today?"
-- **📊 Predictive Analytics**: Build AI models that predict optimal training times, recovery needs, and health trends
-- **🔄 Real-time Monitoring**: Create AI agents that continuously monitor health metrics and provide recommendations
-- **🎨 Custom Health Dashboards**: Generate AI-driven visualizations and reports tailored to individual health goals
-- **📱 Multi-modal Integration**: Combine Garmin data with other health sources for comprehensive AI analysis
-
-### MCP Installation
-
-```bash
-# Install Garmy with MCP support
-pip install garmy[mcp]
-
-# Verify installation
-garmy-mcp --help
-```
-
-### MCP Server Setup
-
-#### Option 1: Command Line Interface
-
-```bash
-# Start MCP server for Claude Desktop (STDIO transport)
-garmy-mcp serve --transport stdio
-
-# Start HTTP server for web clients
-garmy-mcp serve --transport http --port 8080
-
-# Show server information
-garmy-mcp info
-
-# List available metrics
-garmy-mcp metrics
-
-# Test server configuration
-garmy-mcp test
-```
-
-#### Option 2: Programmatic Usage
-
-```python
-from garmy.mcp import GarmyMCPServer, MCPConfig
-
-# Create and configure server
-config = MCPConfig.for_production()
-server = GarmyMCPServer(config)
-
-# Run server
-server.run(transport="stdio")  # For Claude Desktop
-server.run(transport="http", port=8080)  # For HTTP clients
-```
-
-### Claude Desktop Configuration
-
-#### Secure Setup (Recommended)
-
-Add this to your Claude Desktop MCP configuration file:
-
-```json
-{
-  "mcpServers": {
-    "garmy": {
-      "command": "/path/to/your/venv/bin/python",
-      "args": ["-m", "garmy.mcp", "serve", "--transport", "stdio"],
-      "env": {
-        "GARMIN_EMAIL": "your_email@example.com",
-        "GARMIN_PASSWORD": "your_password",
-        "GARMY_MCP_DEBUG": "false",
-        "GARMY_MCP_CACHE_ENABLED": "true"
-      }
-    }
-  }
-}
-```
-
-#### Configuration File Locations
-
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **Linux**: `~/.config/Claude/claude_desktop_config.json`
-
-### Authentication Options
-
-Garmy MCP supports multiple authentication methods:
-
-#### 1. Environment Variables (Most Secure)
-```bash
-export GARMIN_EMAIL="your_email@example.com"
-export GARMIN_PASSWORD="your_password"
-```
-- ✅ Credentials never pass through AI servers
-- ✅ Most secure method
-- ✅ Use with: *"Auto-login to Garmin Connect"*
-
-#### 2. Manual Input (Less Secure)
-- ⚠️ Credentials may be visible to AI servers
-- ⚠️ Use only when necessary
-- ⚠️ Use with: *"Log into Garmin Connect with email [email] and password [password]"*
-
-### AI Health Agent Commands
-
-Once configured, your AI health agent can interact with Garmin data using natural language. Here are examples of what your AI assistant can do:
-
-#### Intelligent Health Monitoring
-- *"Analyze my recovery patterns and tell me if I should train today"*
-- *"What's my sleep efficiency trend over the past month?"*
-- *"Create a personalized training plan based on my readiness scores"*
-- *"Identify correlations between my stress and sleep quality"*
-- *"Generate a health report with actionable insights"*
-
-#### Predictive Health Analytics
-- *"Predict my optimal training windows for next week"*
-- *"What factors are affecting my sleep quality most?"*
-- *"Alert me when my recovery metrics indicate overtraining"*
-- *"Build a model to predict my daily energy levels"*
-
-#### Conversational Health Queries
-- *"How am I progressing towards my fitness goals?"*
-- *"What's unusual about my health data this week?"*
-- *"Compare my current training load to last month"*
-- *"Should I adjust my sleep schedule based on my data?"*
-
-#### Smart Data Export & Visualization
-- *"Create an interactive dashboard of my health metrics"*
-- *"Export my data in a format suitable for machine learning"*
-- *"Generate a health summary for my doctor"*
-- *"Build charts showing my progress over time"*
-
-### MCP Configuration Options
-
-#### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `GARMIN_EMAIL` | Garmin Connect email | None |
-| `GARMIN_PASSWORD` | Garmin Connect password | None |
-| `GARMY_MCP_DEBUG` | Enable debug logging | `false` |
-| `GARMY_MCP_CACHE_ENABLED` | Enable data caching | `false` |
-| `GARMY_MCP_CACHE_SIZE` | Cache size limit | `100` |
-| `GARMY_MCP_MAX_HISTORY_DAYS` | Max historical data | `365` |
-| `GARMY_MCP_DEFAULT_ANALYSIS_PERIOD` | Default analysis period | `30` |
-
-#### Configuration Presets
-
-```python
-from garmy.mcp.config import MCPConfig
-
-# Development setup
-config = MCPConfig.for_development()
-
-# Production setup  
-config = MCPConfig.for_production()
-
-# Minimal setup
-config = MCPConfig.minimal()
-```
-
-### Troubleshooting MCP
-
-#### Common Issues
-
-1. **"Server not responding"**
-   ```bash
-   # Check if server is running
-   garmy-mcp test
-   
-   # Restart with debug mode
-   GARMY_MCP_DEBUG=true garmy-mcp serve --transport stdio
-   ```
-
-2. **"Authentication failed"**
-   ```bash
-   # Verify credentials
-   echo $GARMIN_EMAIL
-   echo $GARMIN_PASSWORD
-   
-   # Test authentication
-   garmy-mcp test --auth
-   ```
-
-3. **"No data available"**
-   ```bash
-   # Check available metrics
-   garmy-mcp metrics
-   
-   # Verify date range
-   garmy-mcp test --date 2023-12-01
-   ```
-
-#### Debug Mode
-
-Enable debug logging for troubleshooting:
-
-```bash
-# Enable debug mode
-export GARMY_MCP_DEBUG=true
-
-# Run server with debug output
-garmy-mcp serve --transport stdio --debug
-```
 
 ## 📊 AI Health Data Analysis
 
@@ -477,8 +263,6 @@ python examples/training_readiness_demo.py
 # Comprehensive metrics sync
 python examples/metrics_sync_demo.py
 
-# MCP server demo
-python examples/mcp_integration_demo.py
 ```
 
 ### Adding Custom Metrics
@@ -538,7 +322,6 @@ make test
 make test-core      # Core functionality
 make test-auth      # Authentication
 make test-metrics   # Metrics
-make test-mcp       # MCP server
 
 # Check code quality
 make lint
@@ -613,7 +396,7 @@ set_config(config)
 ### AI Agent Security Best Practices
 
 1. **Environment Variables**: Essential for AI agents - store credentials securely outside code
-2. **MCP Security**: Use environment variables in MCP configuration to prevent credential exposure to AI servers
+2. **Data Security**: Use environment variables to prevent credential exposure to external services
 3. **OAuth Token Management**: Garmy handles OAuth tokens securely with automatic refresh for long-running AI agents
 4. **HTTPS Only**: All communications use HTTPS with certificate verification
 5. **AI Data Privacy**: Health data never leaves your local environment unless explicitly exported
@@ -644,12 +427,10 @@ auth_client.login(email, password)
 - **`AuthClient`**: Handles authentication and session management
 - **`APIClient`**: Main interface for accessing Garmin Connect data
 - **`MetricAccessor`**: Provides access to specific metrics
-- **`GarmyMCPServer`**: MCP server for AI assistant integration
 
 ### Configuration Classes
 
 - **`GarmyConfig`**: Main configuration class
-- **`MCPConfig`**: MCP server configuration
 - **`ConfigManager`**: Configuration management utilities
 
 ### Metrics Classes
@@ -692,7 +473,6 @@ Garmy was heavily inspired by the excellent [garth](https://github.com/matin/gar
 
 - Enhanced modularity and extensibility
 - Full type safety with mypy compliance
-- Model Context Protocol (MCP) integration for AI assistants
 - Comprehensive async/await support
 - Auto-discovery system for metrics
 - Modern Python architecture and testing practices
@@ -716,4 +496,4 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ---
 
-*Garmy makes Garmin Connect data accessible with modern Python practices, type safety, and AI assistant integration via MCP.*
+*Garmy makes Garmin Connect data accessible with modern Python practices, type safety, and AI assistant integration.*
