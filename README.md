@@ -14,7 +14,8 @@ An AI-powered Python library for Garmin Connect API designed specifically for he
 - **🤖 AI-First Design**: Built specifically for AI health agents and intelligent assistants
 - **🏥 Health Analytics**: Advanced data analysis capabilities for fitness and wellness insights
 - **📊 Rich Metrics**: Complete access to sleep, heart rate, stress, training readiness, and more
-- **🗣️ Natural Language**: Query health data using conversational commands
+- **💾 Local Database**: Built-in SQLite database for local health data storage and sync
+- **🖥️ CLI Tool**: Command-line interface for data synchronization and management
 - **⚡ Real-time Processing**: Async/await support for high-performance AI applications
 - **🛡️ Type Safe**: Full type hints and runtime validation for reliable AI workflows
 - **🔄 Auto-Discovery**: Automatic metric registration and API endpoint discovery
@@ -115,6 +116,76 @@ async def main():
 
 asyncio.run(main())
 ```
+
+## 💾 Local Database & CLI Tool
+
+### CLI Tool for Data Synchronization
+
+Garmy includes a powerful CLI tool for local data synchronization and management:
+
+```bash
+# Sync last 7 days of data
+garmy-sync sync --last-days 7
+
+# Sync specific date range
+garmy-sync sync --date-range 2024-01-01 2024-01-31
+
+# Sync specific metrics only
+garmy-sync sync --metrics DAILY_SUMMARY,SLEEP,BODY_BATTERY
+
+# Show sync status
+garmy-sync status
+
+# Reset failed sync records
+garmy-sync reset --force
+```
+
+### Local Database Usage
+
+Store and query health data locally using the built-in SQLite database:
+
+```python
+from garmy.localdb import SyncManager, HealthDB
+from datetime import date, timedelta
+
+# Initialize sync manager
+sync_manager = SyncManager(db_path="my_health.db")
+sync_manager.initialize("email@garmin.com", "password")
+
+# Sync data to local database
+end_date = date.today()
+start_date = end_date - timedelta(days=30)
+
+stats = sync_manager.sync_range(
+    user_id=1,
+    start_date=start_date,
+    end_date=end_date
+)
+
+print(f"Synced: {stats['completed']} records")
+
+# Query local data
+health_data = sync_manager.query_health_metrics(
+    user_id=1,
+    start_date=start_date,
+    end_date=end_date
+)
+
+activities = sync_manager.query_activities(
+    user_id=1,
+    start_date=start_date,
+    end_date=end_date
+)
+```
+
+### Database Schema
+
+The local database stores health data in optimized tables:
+
+- **`daily_health_metrics`**: Normalized daily health data (steps, sleep, HR, etc.)
+- **`timeseries`**: High-frequency data (heart rate, stress, body battery)
+- **`activities`**: Individual workouts and activities
+- **`sync_status`**: Sync status tracking for each metric per date
 
 ## 📊 Available Metrics
 
@@ -260,9 +331,12 @@ python examples/sleep_demo.py
 # Training readiness analysis
 python examples/training_readiness_demo.py
 
-# Comprehensive metrics sync
-python examples/metrics_sync_demo.py
+# Local database sync example
+python examples/localdb_demo.py
 
+# CLI tool usage
+garmy-sync sync --last-days 7
+garmy-sync status
 ```
 
 ### Adding Custom Metrics

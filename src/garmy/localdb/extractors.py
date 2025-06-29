@@ -22,6 +22,10 @@ class DataExtractor:
             return self._extract_respiration_summary(data)
         elif metric_type == MetricType.ACTIVITIES:
             return self._extract_activity_data(data)
+        elif metric_type == MetricType.STEPS:
+            return self._extract_steps_data(data)
+        elif metric_type == MetricType.CALORIES:
+            return self._extract_calories_data(data)
         else:
             return None
     
@@ -120,23 +124,52 @@ class DataExtractor:
         return {}
     
     def extract_timeseries_data(self, data: Any, metric_type: MetricType) -> List[Tuple]:
-        """Extract timeseries data points."""
-        if not hasattr(data, 'data_points') or not data.data_points:
-            return []
-        
+        """Extract timeseries data points from Garmy metrics."""
         timeseries_data = []
-        for point in data.data_points:
-            if hasattr(point, 'timestamp') and hasattr(point, 'value'):
-                timestamp = point.timestamp
-                value = point.value
-                metadata = {}
-                
-                # Add metric-specific metadata
-                if metric_type == MetricType.HEART_RATE and hasattr(point, 'zone'):
-                    metadata['zone'] = point.zone
-                elif metric_type == MetricType.STRESS and hasattr(point, 'stress_level'):
-                    metadata['stress_level'] = point.stress_level
-                
-                timeseries_data.append((timestamp, value, metadata))
+        
+        if metric_type == MetricType.BODY_BATTERY:
+            if hasattr(data, 'body_battery_readings') and data.body_battery_readings:
+                for reading in data.body_battery_readings:
+                    metadata = {
+                        'status': getattr(reading, 'status', None),
+                        'version': getattr(reading, 'version', None)
+                    }
+                    timeseries_data.append((reading.timestamp, reading.level, metadata))
+                    
+        elif metric_type == MetricType.STRESS:
+            if hasattr(data, 'stress_readings') and data.stress_readings:
+                for reading in data.stress_readings:
+                    metadata = {}
+                    if hasattr(reading, 'stress_category'):
+                        metadata['stress_category'] = reading.stress_category
+                    timeseries_data.append((reading.timestamp, reading.stress_level, metadata))
+                    
+        elif metric_type == MetricType.HEART_RATE:
+            if hasattr(data, 'heart_rate_values_array') and data.heart_rate_values_array:
+                for reading in data.heart_rate_values_array:
+                    if isinstance(reading, (list, tuple)) and len(reading) >= 2:
+                        timestamp, heart_rate = reading[0], reading[1]
+                        timeseries_data.append((timestamp, heart_rate, {}))
+        
+        elif metric_type == MetricType.RESPIRATION:
+            # Respiration might have different format - check if it has readings
+            if hasattr(data, 'respiration_readings') and data.respiration_readings:
+                for reading in data.respiration_readings:
+                    timeseries_data.append((reading.timestamp, reading.value, {}))
         
         return timeseries_data
+    
+    def _extract_steps_data(self, data: Any) -> Dict[str, Any]:
+        """Extract steps data."""
+        return {
+            'total_steps': getattr(data, 'total_steps', None),
+            'step_goal': getattr(data, 'step_goal', None)
+        }
+    
+    def _extract_calories_data(self, data: Any) -> Dict[str, Any]:
+        """Extract calories data."""
+        return {
+            'total_calories': getattr(data, 'total_kilocalories', None),
+            'active_calories': getattr(data, 'active_kilocalories', None),
+            'bmr_calories': getattr(data, 'bmr_kilocalories', None)
+        }

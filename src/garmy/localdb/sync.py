@@ -1,4 +1,4 @@
-"""Minimal and clean synchronization manager."""
+"""Synchronization manager for Garmin health data."""
 
 import asyncio
 from datetime import date, datetime, timedelta
@@ -8,13 +8,13 @@ from pathlib import Path
 from .db import HealthDB
 from .config import LocalDBConfig
 from .models import MetricType
-from .progress import create_reporter, ProgressReporter
+from .progress import ProgressReporter
 from .extractors import DataExtractor
 from .activities_iterator import ActivitiesIterator
 
 
 class SyncManager:
-    """Minimal synchronization manager for health metrics."""
+    """Synchronization manager for health metrics."""
 
     def __init__(self,
                  db_path: Path = Path("health.db"),
@@ -23,27 +23,16 @@ class SyncManager:
         """Initialize sync manager.
 
         Args:
-            db_path: Path to SQLite database file
-            config: Configuration object (default: LocalDBConfig())
-            progress_reporter: Custom progress reporter (default: from config)
+            db_path: Path to SQLite database file.
+            config: Configuration object.
+            progress_reporter: Custom progress reporter.
         """
         self.db_path = db_path
         self.config = config if config is not None else LocalDBConfig()
 
-        # Initialize database
         self.db = HealthDB(db_path, self.config.database)
+        self.progress = progress_reporter or ProgressReporter()
 
-        # Initialize progress reporter
-        if progress_reporter:
-            self.progress = progress_reporter
-        else:
-            self.progress = create_reporter(
-                self.config.sync.progress_reporter,
-                name="garmin_sync",
-                show_details=self.config.sync.progress_show_details
-            )
-
-        # Initialize utilities
         self.extractor = DataExtractor()
         self.api_client = None
         self.activities_iterator = None
@@ -53,12 +42,10 @@ class SyncManager:
         try:
             from garmy import AuthClient, APIClient
 
-            # Setup authentication
             auth_client = AuthClient()
             auth_client.login(email, password)
             self.api_client = APIClient(auth_client=auth_client)
 
-            # Initialize activities iterator
             self.activities_iterator = ActivitiesIterator(
                 self.api_client,
                 self.config.sync,
@@ -88,41 +75,34 @@ class SyncManager:
         if not self.api_client:
             raise RuntimeError("Must call initialize() before syncing")
 
-        # # Validate date range
-        # if start_date > end_date:
-        #     raise ValueError(f"start_date ({start_date}) cannot be after end_date ({end_date})")
-
-        # Calculate total work
         date_count = abs((end_date - start_date).days) + 1
 
-        # Prevent extremely large sync ranges
         if date_count > self.config.sync.max_sync_days:
             raise ValueError(f"Date range too large: {date_count} days. Maximum allowed: {self.config.sync.max_sync_days} days")
 
-        # Use all metrics if none specified
         if metrics is None:
             metrics = list(MetricType)
 
-        # Calculate work
         non_activities_metrics = [m for m in metrics if m != MetricType.ACTIVITIES]
         total_tasks = date_count * len(metrics)
 
-        # Initialize progress
-        self.progress.start_sync(total_tasks, f"Syncing {date_count} days")
+        self.progress.start_sync(total_tasks)
 
-        # Sync statistics
         stats = {'completed': 0, 'skipped': 0, 'failed': 0, 'total_tasks': total_tasks}
 
         try:
-            # Process each date
+            for current_date in self._date_range(start_date, end_date):
+                for metric_type in metrics:
+                    if not self.db.sync_status_exists(user_id, current_date, metric_type):
+                        self.db.create_sync_status(user_id, current_date, metric_type, 'pending')
+            
             for current_date in self._date_range(start_date, end_date):
                 self._sync_date(user_id, current_date, metrics, stats)
 
         except Exception as e:
-            self.progress.error(f"Sync failed: {e}")
             raise
         finally:
-            self.progress.end_sync(stats['failed'] == 0)
+            self.progress.end_sync()
 
         return stats
 
@@ -136,43 +116,45 @@ class SyncManager:
                     self._sync_metric_for_date(user_id, sync_date, metric_type, stats)
 
             except Exception as e:
-                self.progress.warning(f"Failed to sync {metric_type.value} for {sync_date}: {e}")
+                self.db.update_sync_status(user_id, sync_date, metric_type, 'failed', str(e))
+                self.progress.task_failed(f"{metric_type.value}", sync_date)
                 stats['failed'] += 1
 
     def _sync_metric_for_date(self, user_id: int, sync_date: date, metric_type: MetricType, stats: Dict[str, int]):
         """Sync a single metric for a date."""
-        # Check if already exists
-        if self._has_metric_data(user_id, metric_type, sync_date):
+        if self._is_metric_completed(user_id, metric_type, sync_date):
             stats['skipped'] += 1
-            self.progress.task_skipped(f"{metric_type.value} for {sync_date}", "Already exists")
+            self.progress.task_skipped(f"{metric_type.value}", sync_date)
             return
 
         try:
-            # Fetch data from API
             if metric_type in [MetricType.BODY_BATTERY, MetricType.STRESS, MetricType.HEART_RATE, MetricType.RESPIRATION]:
-                # Timeseries data
                 data = self.api_client.metrics.get(metric_type.value).get(sync_date)
                 timeseries_data = self.extractor.extract_timeseries_data(data, metric_type)
                 if timeseries_data:
                     self.db.store_timeseries_batch(user_id, metric_type, timeseries_data)
+                    self.db.update_sync_status(user_id, sync_date, metric_type, 'completed')
                     stats['completed'] += 1
                 else:
+                    self.db.update_sync_status(user_id, sync_date, metric_type, 'skipped')
                     stats['skipped'] += 1
             else:
-                # Daily metrics
                 data = self.api_client.metrics.get(metric_type.value).get(sync_date)
                 extracted_data = self.extractor.extract_metric_data(data, metric_type)
 
                 if extracted_data and any(v is not None for v in extracted_data.values()):
                     self._store_health_metric(user_id, sync_date, metric_type, extracted_data)
+                    self.db.update_sync_status(user_id, sync_date, metric_type, 'completed')
                     stats['completed'] += 1
                 else:
+                    self.db.update_sync_status(user_id, sync_date, metric_type, 'skipped')
                     stats['skipped'] += 1
 
-            self.progress.task_complete(f"{metric_type.value} for {sync_date}")
+            self.progress.task_complete(f"{metric_type.value}", sync_date)
 
         except Exception as e:
-            self.progress.warning(f"Failed to sync {metric_type.value} for {sync_date}: {e}")
+            self.db.update_sync_status(user_id, sync_date, metric_type, 'failed', str(e))
+            self.progress.task_failed(f"{metric_type.value}", sync_date)
             stats['failed'] += 1
 
     def _sync_activities_for_date(self, user_id: int, sync_date: date, stats: Dict[str, int]):
@@ -191,22 +173,19 @@ class SyncManager:
 
                 activity_id = activity_data['activity_id']
 
-                # Check if already stored
                 if self.db.activity_exists(user_id, activity_id):
                     stats['skipped'] += 1
                     continue
 
-                # Add required date field
                 activity_data['activity_date'] = sync_date
 
-                # Store activity
                 self.db.store_activity(user_id, activity_data)
                 stats['completed'] += 1
 
-            self.progress.task_complete(f"activities for {sync_date}")
+            self.progress.task_complete("activities", sync_date)
 
         except Exception as e:
-            self.progress.warning(f"Failed to sync activities for {sync_date}: {e}")
+            self.progress.task_failed("activities", sync_date)
             stats['failed'] += 1
 
     def _store_health_metric(self, user_id: int, sync_date: date, metric_type: MetricType, data: Dict):
@@ -232,14 +211,10 @@ class SyncManager:
         elif metric_type == MetricType.RESPIRATION:
             self.db.store_health_metric(user_id, sync_date, **data)
 
-    def _has_metric_data(self, user_id: int, metric_type: MetricType, sync_date: date) -> bool:
-        """Check if metric data already exists."""
-        if metric_type in [MetricType.DAILY_SUMMARY, MetricType.SLEEP,
-                          MetricType.TRAINING_READINESS, MetricType.HRV, MetricType.RESPIRATION]:
-            return self.db.health_metric_exists(user_id, sync_date)
-        else:
-            # For other metrics, just check normalized table
-            return self.db.health_metric_exists(user_id, sync_date)
+    def _is_metric_completed(self, user_id: int, metric_type: MetricType, sync_date: date) -> bool:
+        """Check if metric is already completed."""
+        status = self.db.get_sync_status(user_id, sync_date, metric_type)
+        return status == 'completed'
 
     def _date_range(self, start_date: date, end_date: date):
         """Generate date range in either direction."""
@@ -248,10 +223,6 @@ class SyncManager:
         while (step > 0 and current <= end_date) or (step < 0 and current >= end_date):
             yield current
             current += timedelta(days=step)
-
-    # ========================================================================================
-    # QUERY METHODS (Basic data access)
-    # ========================================================================================
 
     def query_health_metrics(self, user_id: int, start_date: date, end_date: date) -> List[Dict]:
         """Query normalized health metrics for analysis."""
