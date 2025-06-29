@@ -178,74 +178,55 @@ class HealthDBDemo:
         print(f"   ❌ Failed: {stats['failed']}")
         print(f"   📈 Total: {stats['total_tasks']}")
         
-        # Database statistics
-        db_stats = self.sync_manager.get_stats()
-        print(f"\n🏗️  Database Statistics:")
-        print(f"   📋 Health metrics: {db_stats.get('health_metrics_count', 0)}")
-        print(f"   🏃‍♂️ Activities: {db_stats.get('activities_count', 0)}")
-        print(f"   📊 Timeseries points: {db_stats.get('timeseries_count', 0)}")
-        print(f"   👥 Users: {db_stats.get('users', 0)}")
-        
-        # Show data coverage
-        coverage = db_stats.get('coverage', {})
-        if coverage:
-            print(f"\n📅 Data Coverage:")
-            print(f"   👟 Days with steps: {coverage.get('days_with_steps', 0)}")
-            print(f"   😴 Days with sleep: {coverage.get('days_with_sleep', 0)}")
-            print(f"   ❤️ Days with heart rate: {coverage.get('days_with_hr', 0)}")
-            print(f"   💪 Days with readiness: {coverage.get('days_with_readiness', 0)}")
-        
-        # Analytics demos
-        await self._show_health_analytics(start_date, end_date)
-        await self._show_activity_analytics(start_date, end_date)
-        await self._show_sleep_analytics(start_date, end_date)
-    
-    async def _show_health_analytics(self, start_date: date, end_date: date):
-        """Show health analytics."""
-        print(f"\n💚 Health Trends Analysis")
-        
-        trends = self.sync_manager.get_health_trends(self.user_id, start_date, end_date)
-        if trends:
-            print(f"   📊 Average daily steps: {trends.get('avg_daily_steps', 0):,.0f}")
-            print(f"   ❤️ Average resting HR: {trends.get('avg_resting_hr', 0):.0f} bpm")
-            print(f"   😰 Average stress level: {trends.get('avg_stress', 0):.0f}")
-            print(f"   🔋 Average Body Battery: {trends.get('avg_body_battery_high', 0):.0f}")
-            print(f"   💪 Average training readiness: {trends.get('avg_training_readiness', 0):.0f}")
-            print(f"   🎯 Days >10k steps: {trends.get('days_over_10k_steps', 0)}")
-            print(f"   😴 Days >8h sleep: {trends.get('days_over_8h_sleep', 0)}")
-    
-    async def _show_activity_analytics(self, start_date: date, end_date: date):
-        """Show activity analytics."""
-        print(f"\n🏃‍♂️ Activity Analysis")
-        
-        activity_summary = self.sync_manager.get_activity_summary(self.user_id, start_date, end_date)
-        if activity_summary.get('total_activities', 0) > 0:
-            total_hours = activity_summary.get('total_duration_seconds', 0) / 3600
-            avg_minutes = activity_summary.get('avg_duration_seconds', 0) / 60
+        # Simple database statistics using direct SQL
+        with self.sync_manager.db.connection() as conn:
+            health_count = conn.execute("SELECT COUNT(*) FROM daily_health_metrics").fetchone()[0]
+            activities_count = conn.execute("SELECT COUNT(*) FROM activities").fetchone()[0]
+            timeseries_count = conn.execute("SELECT COUNT(*) FROM timeseries").fetchone()[0]
             
-            print(f"   📈 Total activities: {activity_summary['total_activities']}")
-            print(f"   🎯 Activity types: {activity_summary.get('unique_activity_types', 0)}")
-            print(f"   ⏱️ Total time: {total_hours:.1f} hours")
-            print(f"   📊 Average duration: {avg_minutes:.0f} minutes")
-            print(f"   ❤️ Average heart rate: {activity_summary.get('avg_heart_rate_across_activities', 0):.0f} bpm")
-            print(f"   🏆 Most common: {activity_summary.get('most_common_activity', 'N/A')}")
-        else:
-            print("   📊 No activities found in this period")
-    
-    async def _show_sleep_analytics(self, start_date: date, end_date: date):
-        """Show sleep analytics."""
-        print(f"\n😴 Sleep Analysis")
+            print(f"\n🏗️  Database Statistics:")
+            print(f"   📋 Health metrics: {health_count}")
+            print(f"   🏃‍♂️ Activities: {activities_count}")
+            print(f"   📊 Timeseries points: {timeseries_count}")
         
-        sleep_analysis = self.sync_manager.get_sleep_analysis(self.user_id, start_date, end_date)
-        if sleep_analysis.get('total_nights', 0) > 0:
-            print(f"   🌙 Total nights: {sleep_analysis['total_nights']}")
-            print(f"   ⏰ Average duration: {sleep_analysis.get('avg_sleep_duration', 0):.1f} hours")
-            print(f"   🛌 Deep sleep: {sleep_analysis.get('avg_deep_sleep_pct', 0):.1f}%")
-            print(f"   🌙 REM sleep: {sleep_analysis.get('avg_rem_sleep_pct', 0):.1f}%")
-            print(f"   🫁 Average SpO2: {sleep_analysis.get('avg_spo2', 0):.1f}%")
-            print(f"   📊 Range: {sleep_analysis.get('min_sleep', 0):.1f}h - {sleep_analysis.get('max_sleep', 0):.1f}h")
-        else:
-            print("   📊 No sleep data found in this period")
+        # Show simple analytics using direct SQL
+        await self._show_simple_analytics(start_date, end_date)
+    
+    async def _show_simple_analytics(self, start_date: date, end_date: date):
+        """Show simple analytics using direct SQL queries."""
+        print(f"\n📊 Simple Analytics (Direct SQL)")
+        
+        with self.sync_manager.db.connection() as conn:
+            # Health trends
+            trends = conn.execute("""
+                SELECT 
+                    AVG(total_steps) as avg_daily_steps,
+                    AVG(resting_heart_rate) as avg_resting_hr,
+                    AVG(sleep_duration_hours) as avg_sleep_hours,
+                    COUNT(CASE WHEN total_steps > 10000 THEN 1 END) as days_over_10k_steps
+                FROM daily_health_metrics 
+                WHERE user_id = ? AND metric_date BETWEEN ? AND ?
+            """, (self.user_id, start_date.isoformat(), end_date.isoformat())).fetchone()
+            
+            if trends and trends[0]:
+                print(f"   👟 Average daily steps: {trends[0]:,.0f}")
+                print(f"   ❤️ Average resting HR: {trends[1]:.0f} bpm" if trends[1] else "   ❤️ No HR data")
+                print(f"   😴 Average sleep: {trends[2]:.1f} hours" if trends[2] else "   😴 No sleep data")
+                print(f"   🎯 Days >10k steps: {trends[3]}")
+            
+            # Activities summary
+            activities = conn.execute("""
+                SELECT COUNT(*) as total_activities, COUNT(DISTINCT activity_name) as activity_types
+                FROM activities 
+                WHERE user_id = ? AND activity_date BETWEEN ? AND ?
+            """, (self.user_id, start_date.isoformat(), end_date.isoformat())).fetchone()
+            
+            if activities and activities[0] > 0:
+                print(f"\n🏃‍♂️ Activities:")
+                print(f"   📈 Total activities: {activities[0]}")
+                print(f"   🎯 Activity types: {activities[1]}")
+            else:
+                print(f"\n🏃‍♂️ No activities found in this period")
     
     async def _demo_data_export(self):
         """Demo data export capabilities."""

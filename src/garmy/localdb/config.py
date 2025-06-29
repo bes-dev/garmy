@@ -26,6 +26,9 @@ class SyncConfig:
     
     # Timeseries validation
     min_timeseries_fields: int = 2
+    
+    # Sync range limits
+    max_sync_days: int = 3650  # ~10 years maximum sync range
 
 
 @dataclass

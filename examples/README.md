@@ -58,6 +58,11 @@ This directory contains practical examples demonstrating how to use Garmy for ac
    python examples/health_db_demo.py
    ```
 
+9. **🗄️ Database Schema Architecture (NEW!)**:
+   ```bash
+   python examples/schema_demo.py
+   ```
+
 ## 📁 Example Files
 
 ### 🔐 `basic_auth.py`
@@ -242,6 +247,30 @@ python examples/health_db_demo.py
 - 😴 Sleep quality analysis with phase breakdowns
 - 📤 Data export for external analysis
 - 🔍 Advanced SQL queries for health insights
+
+### 🗄️ `schema_demo.py` ⭐ **NEW!**
+**Purpose**: Database schema architecture demonstration
+
+**Features**:
+- **Clean schema separation** from database implementation logic
+- **Centralized schema management** with version tracking
+- **Schema validation** and introspection capabilities
+- **Direct data extraction** using attribute access
+- **Evolution support** for future schema changes
+- **Self-documenting** schema with descriptions and metadata
+
+**Usage**:
+```bash
+python examples/schema_demo.py
+```
+
+**What it demonstrates**:
+- 🏗️ Structured schema definition with TableDefinition classes
+- 📚 Comprehensive documentation for each table and column
+- 🔍 Runtime schema validation and introspection
+- 🔧 Direct attribute extraction from API responses to database
+- 🚀 Foundation for schema migrations and evolution
+- 🧹 Clean separation of concerns in database architecture
 
 ## 🛠 Usage Patterns
 
