@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "garmy"
 version = "1.0.0"
-description = "AI-powered Garmin Connect API library with MCP integration for health agents and data analysis"
+description = "AI-powered Garmin Connect API library for health agents and data analysis"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 authors = [
@@ -26,9 +26,12 @@ keywords = [
     "lightweight",
     "modular",
     "garth",
-    "mcp",
     "ai-integration",
-    "type-safe"
+    "type-safe",
+    "mcp",
+    "model-context-protocol",
+    "localdb",
+    "sqlite"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -56,8 +59,16 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = [
-    "fastmcp>=1.0.0",
-    "click>=8.0.0"
+    "fastmcp>=0.4.0"
+]
+localdb = [
+    "sqlalchemy>=1.4.0",
+    "tqdm>=4.0.0"
+]
+all = [
+    "fastmcp>=0.4.0",
+    "sqlalchemy>=1.4.0", 
+    "tqdm>=4.0.0"
 ]
 dev = [
     "pytest>=7.0.0",
@@ -89,13 +100,15 @@ examples = [
 
 [project.urls]
 Homepage = "https://github.com/bes-dev/garmy"
-Documentation = "https://github.com/bes-dev/garmy/blob/master/README.md"
+Documentation = "https://github.com/bes-dev/garmy/blob/master/docs/"
 Repository = "https://github.com/bes-dev/garmy.git"
 "Bug Tracker" = "https://github.com/bes-dev/garmy/issues"
 Changelog = "https://github.com/bes-dev/garmy/blob/master/CHANGELOG.md"
 
 [project.scripts]
+garmy-sync = "garmy.localdb.cli:main"
 garmy-mcp = "garmy.mcp.cli:main"
+
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -144,19 +157,11 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = true
-exclude = ["src/garmy/mcp/"]
 
 [[tool.mypy.overrides]]
 module = "requests_oauthlib.*"
 ignore_missing_imports = true
 
-[[tool.mypy.overrides]]
-module = "fastmcp.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "anyio.*"
-ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -171,26 +176,17 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=html",
     "--cov-report=xml",
-    "--ignore=tests/test_mcp_analysis.py",
-    "--ignore=tests/test_mcp_auth.py",
-    "--ignore=tests/test_mcp_config.py",
-    "--ignore=tests/test_mcp_metrics.py",
-    "--ignore=tests/test_mcp_prompts.py",
-    "--ignore=tests/test_mcp_resources.py",
-    "--ignore=tests/test_mcp_server.py"
 ]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "mcp: marks tests as MCP tests requiring fastmcp dependencies (deselect with '-m \"not mcp\"')"
 ]
 
 [tool.coverage.run]
 source = ["src/garmy"]
 omit = [
     "*/tests/*",
-    "*/test_*",
-    "src/garmy/mcp/*"
+    "*/test_*"
 ]
 
 [tool.coverage.report]
@@ -251,7 +247,6 @@ ignore = [
 "tests/*" = ["T201", "PLR2004", "SIM117", "F841"]  # Allow print statements, magic values, nested with, unused vars in tests
 "examples/*" = ["T201", "C901", "PLR0912"]  # Allow print statements and complexity in examples
 "src/garmy/core/discovery.py" = ["T201"]  # Allow prints in discovery module
-"src/garmy/mcp/*" = ["T201"]  # Allow print statements in MCP modules for debugging
 
 [tool.flake8]
 max-line-length = 100

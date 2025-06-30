@@ -53,6 +53,16 @@ This directory contains practical examples demonstrating how to use Garmy for ac
    python examples/sleep_phases_analysis.py
    ```
 
+8. **🏥 Health Database System (NEW!)**:
+   ```bash
+   python examples/health_db_demo.py
+   ```
+
+9. **🗄️ Database Schema Architecture (NEW!)**:
+   ```bash
+   python examples/schema_demo.py
+   ```
+
 ## 📁 Example Files
 
 ### 🔐 `basic_auth.py`
@@ -208,6 +218,60 @@ python examples/sleep_phases_analysis.py
 - Daily metrics compilation
 - Health trend analysis
 
+### 🏥 `health_db_demo.py` ⭐ **NEW!**
+**Purpose**: Complete health database system demonstration
+
+**Features**:
+- **Database synchronization** with normalized schema
+- **Progress tracking** with multiple display options (Rich, TQDM, logging)
+- **Health analytics** with sleep, activity, and wellness insights
+- **Data export** capabilities (JSON, CSV)
+- **Advanced SQL queries** for health correlations
+- **Real-time progress** updates during sync
+
+**Usage**:
+```bash
+# Set your credentials
+export GARMIN_EMAIL="your_email@example.com"
+export GARMIN_PASSWORD="your_password"
+
+# Run the comprehensive demo
+python examples/health_db_demo.py
+```
+
+**What it demonstrates**:
+- 📊 Different progress reporting styles
+- 💾 Normalized database storage for efficient queries
+- 📈 Health trends and correlations analysis
+- 🏃‍♂️ Activity patterns and performance metrics
+- 😴 Sleep quality analysis with phase breakdowns
+- 📤 Data export for external analysis
+- 🔍 Advanced SQL queries for health insights
+
+### 🗄️ `schema_demo.py` ⭐ **NEW!**
+**Purpose**: Database schema architecture demonstration
+
+**Features**:
+- **Clean schema separation** from database implementation logic
+- **Centralized schema management** with version tracking
+- **Schema validation** and introspection capabilities
+- **Direct data extraction** using attribute access
+- **Evolution support** for future schema changes
+- **Self-documenting** schema with descriptions and metadata
+
+**Usage**:
+```bash
+python examples/schema_demo.py
+```
+
+**What it demonstrates**:
+- 🏗️ Structured schema definition with TableDefinition classes
+- 📚 Comprehensive documentation for each table and column
+- 🔍 Runtime schema validation and introspection
+- 🔧 Direct attribute extraction from API responses to database
+- 🚀 Foundation for schema migrations and evolution
+- 🧹 Clean separation of concerns in database architecture
+
 ## 🛠 Usage Patterns
 
 ### Basic Authentication
@@ -237,16 +301,12 @@ for day in week_data:
 print("Available metrics:", list(api_client.metrics.keys()))
 ```
 
-### Async Operations
+### Multiple Metrics Access
 ```python
-import asyncio
-
-async def get_multiple_metrics():
-    # Fetch multiple metrics concurrently
-    sleep_task = api_client.metrics.get('sleep').get_async()
-    hrv_task = api_client.metrics.get('hrv').get_async()
-    
-    sleep_data, hrv_data = await asyncio.gather(sleep_task, hrv_task)
+# Access multiple metrics
+def get_multiple_metrics():
+    sleep_data = api_client.metrics.get('sleep').get()
+    hrv_data = api_client.metrics.get('hrv').get()
     return sleep_data, hrv_data
 ```
 
@@ -282,7 +342,9 @@ async def get_multiple_metrics():
 
 ### Getting Help
 
-- Check the main documentation
+- Check the [main documentation](../docs/README.md)
+- Review [Quick Start Guide](../docs/quick-start.md) for setup help
+- See [API Reference](../docs/api-reference.md) for detailed usage
 - Review error messages for specific guidance
 - Ensure your device supports the requested metric type
 

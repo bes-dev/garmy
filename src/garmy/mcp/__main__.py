@@ -1,8 +1,4 @@
-"""Entry point for running Garmy MCP CLI as a module.
-
-This allows the MCP CLI to be executed using:
-    python -m garmy.mcp.cli <command>
-"""
+"""Main entry point for Garmin LocalDB MCP server module."""
 
 from .cli import main
 

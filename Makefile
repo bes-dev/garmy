@@ -1,4 +1,4 @@
-.PHONY: help lint format check test test-mcp test-core test-auth test-metrics clean install-dev build ci
+.PHONY: help lint format check test test-core test-auth test-metrics clean install-dev build ci
 
 # Default target
 help:
@@ -22,7 +22,7 @@ help:
 	@echo "  test-core      - Run core module tests"
 	@echo "  test-auth      - Run authentication tests"
 	@echo "  test-metrics   - Run metrics tests"
-	@echo "  test-mcp       - Run MCP server tests"
+	@echo ""
 	@echo ""
 	@echo "🚀 CI/CD:"
 	@echo "  ci             - Run full CI pipeline (format, lint, test)"
@@ -106,11 +106,6 @@ test-metrics:
 	pytest tests/test_metrics_*.py -v
 	@echo "✅ Metrics tests complete!"
 
-# Run MCP server tests
-test-mcp:
-	@echo "🧪 Running MCP server tests..."
-	pytest tests/test_mcp_*.py -v
-	@echo "✅ MCP tests complete!"
 
 # Clean build artifacts
 clean:

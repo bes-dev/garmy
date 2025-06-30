@@ -1,353 +1,478 @@
-#!/usr/bin/env python3
-"""Garmy MCP Server implementation.
+"""Garmin LocalDB MCP Server implementation.
 
-This module provides the main MCP server class for Garmy, enabling AI assistants
-to access Garmin Connect health and fitness data through the standardized MCP protocol.
+Provides secure, read-only access to synchronized Garmin health data
+through the Model Context Protocol with optimized tools for LLM understanding.
 """
 
+import os
+import re
+import sqlite3
 import logging
-from typing import Any, Dict, List, Optional, Union
-
-import anyio
-from fastmcp import FastMCP
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 try:
-    from builtins import BaseExceptionGroup  # Python 3.11+
+    from fastmcp import FastMCP
 except ImportError:
-    # Python < 3.11 compatibility
-    BaseExceptionGroup = Exception
+    raise ImportError(
+        "FastMCP is required for MCP server functionality. "
+        "Install with: pip install garmy[mcp] or pip install fastmcp"
+    )
 
-from .. import APIClient, AuthClient
-from ..core.discovery import MetricDiscovery
 from .config import MCPConfig
-from .prompts import PromptTemplates
-from .resources import ResourceProviders
-from .tools import AnalysisTools, AuthTools, MetricTools
-
-logger = logging.getLogger(__name__)
+from ..localdb.models import MetricType
 
 
-class GarmyMCPServer:
-    """MCP server for Garmy with authentication state management.
+class SQLiteConnection:
+    """Secure SQLite connection context manager for read-only access."""
+    
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.conn = None
+    
+    def __enter__(self):
+        """Open read-only SQLite connection."""
+        self.conn = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True)
+        self.conn.row_factory = sqlite3.Row
+        return self.conn
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Close connection safely."""
+        if self.conn:
+            self.conn.close()
 
-    Provides AI assistants access to Garmin Connect data through
-    the standardized MCP protocol.
 
-    Attributes:
-        config: Server configuration.
-        mcp: FastMCP server instance.
-        auth_client: Garmin authentication client.
-        api_client: Garmin API client.
-        discovered_metrics: Discovered health metrics.
+class QueryValidator:
+    """SQL query validation and sanitization for read-only access."""
+    
+    ALLOWED_STATEMENTS = ('select', 'with')
+    FORBIDDEN_KEYWORDS = {
+        'insert', 'update', 'delete', 'drop', 'create', 'alter',
+        'pragma', 'attach', 'detach', 'vacuum', 'analyze'
+    }
+    
+    @classmethod
+    def validate_query(cls, query: str) -> None:
+        """Validate SQL query for read-only access.
+        
+        Args:
+            query: SQL query to validate
+            
+        Raises:
+            ValueError: If query is not safe for read-only access
+        """
+        if not query or not query.strip():
+            raise ValueError("Query cannot be empty")
+        
+        query_lower = query.lower().strip()
+        
+        # Check if query starts with allowed statement
+        if not any(query_lower.startswith(prefix) for prefix in cls.ALLOWED_STATEMENTS):
+            allowed = ', '.join(cls.ALLOWED_STATEMENTS).upper()
+            raise ValueError(f"Only {allowed} queries are allowed for security")
+        
+        # Check for forbidden keywords
+        query_words = set(re.findall(r'\\b\\w+\\b', query_lower))
+        forbidden_found = query_words.intersection(cls.FORBIDDEN_KEYWORDS)
+        if forbidden_found:
+            raise ValueError(f"Forbidden keywords found: {', '.join(forbidden_found)}")
+        
+        # Check for multiple statements
+        if cls._contains_multiple_statements(query):
+            raise ValueError("Multiple statements not allowed")
+    
+    @staticmethod
+    def _contains_multiple_statements(sql: str) -> bool:
+        """Check if SQL contains multiple statements."""
+        in_single_quote = False
+        in_double_quote = False
+        
+        for char in sql:
+            if char == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+            elif char == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+            elif char == ';' and not in_single_quote and not in_double_quote:
+                return True
+        
+        return False
+    
+    @staticmethod
+    def add_row_limit(query: str, limit: int = 1000) -> str:
+        """Add LIMIT clause if not present."""
+        query_lower = query.lower()
+        if 'limit' not in query_lower:
+            return f"{query.rstrip(';')} LIMIT {limit}"
+        return query
+
+
+class DatabaseManager:
+    """Manages database connections and basic operations."""
+    
+    def __init__(self, config: MCPConfig):
+        self.config = config
+        self.validator = QueryValidator()
+        self.logger = logging.getLogger("garmy.mcp.database")
+        
+        # Configure logging if enabled
+        if config.enable_query_logging and not self.logger.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            ))
+            self.logger.addHandler(handler)
+            self.logger.setLevel(logging.INFO)
+    
+    def get_connection(self):
+        """Get read-only database connection."""
+        return SQLiteConnection(self.config.db_path)
+    
+    def execute_safe_query(self, query: str, params: Optional[List[Any]] = None) -> List[Dict[str, Any]]:
+        """Execute validated query with safety checks."""
+        # Validate query
+        if self.config.strict_validation:
+            self.validator.validate_query(query)
+        
+        # Add row limit
+        original_query = query
+        query = self.validator.add_row_limit(query, self.config.max_rows)
+        
+        # Log query if enabled
+        if self.config.enable_query_logging:
+            self.logger.info(f"Executing query: {query}")
+            if params:
+                self.logger.info(f"Parameters: {params}")
+        
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params or [])
+                results = [dict(row) for row in cursor.fetchall()]
+                
+                if self.config.enable_query_logging:
+                    self.logger.info(f"Query returned {len(results)} rows")
+                
+                return results
+        except sqlite3.Error as e:
+            if self.config.enable_query_logging:
+                self.logger.error(f"Query failed: {str(e)}")
+            raise ValueError(f"Database error: {str(e)}")
+
+
+# Initialize MCP server
+def create_mcp_server(config: Optional[MCPConfig] = None) -> FastMCP:
+    """Create and configure the Garmin LocalDB MCP server.
+    
+    Args:
+        config: Optional MCP configuration. If None, loads from environment.
     """
-
-    def __init__(self, config: Optional[MCPConfig] = None):
-        """Initialize MCP server.
-
-        Args:
-            config: Server configuration. Uses defaults if not provided.
+    if config is None:
+        # Fallback to environment variable for backwards compatibility
+        if 'GARMY_DB_PATH' not in os.environ:
+            raise ValueError("GARMY_DB_PATH environment variable must be set")
+        
+        db_path = Path(os.environ['GARMY_DB_PATH'])
+        config = MCPConfig.from_db_path(db_path)
+    
+    # Validate configuration
+    config.validate()
+    
+    # Initialize components
+    db_manager = DatabaseManager(config)
+    
+    # Initialize MCP server with clear, LLM-friendly name
+    mcp = FastMCP("Garmin Health Data Explorer")
+    
+    @mcp.tool()
+    def explore_database_structure() -> Dict[str, Any]:
+        """WHEN TO USE: When you need to understand what health data is available.
+        
+        This is your starting point for exploring Garmin health data. Use this tool first
+        to see what tables and data types are available before running specific queries.
+        
+        Returns:
+            Complete database structure with table descriptions and available data types
         """
-        self.config = config or MCPConfig()
-        self.mcp = FastMCP(self.config.server_name)
-
-        # Authentication state
-        self.auth_client: Optional[AuthClient] = None
-        self.api_client: Optional[APIClient] = None
-
-        # Discovered metrics
-        self.discovered_metrics: Dict[str, Any] = {}
-
-        # Setup logging
-        if self.config.debug_mode:
-            logging.basicConfig(level=logging.DEBUG)
-
-        # Initialize components
-        self._initialize_components()
-
-    def _initialize_components(self):
-        """Initialize all server components."""
-        # Discover metrics
-        self._discover_metrics()
-
-        # Register components according to configuration
-        if self.config.enable_auth_tools:
-            self._register_auth_tools()
-
-        if self.config.enable_metric_tools:
-            self._register_metric_tools()
-
-        if self.config.enable_analysis_tools:
-            self._register_analysis_tools()
-
-        if self.config.enable_resources:
-            self._register_resources()
-
-        if self.config.enable_prompts:
-            self._register_prompts()
-
-    def _discover_metrics(self):
-        """Discover all available metrics."""
         try:
-            self.discovered_metrics = MetricDiscovery.discover_metrics()
-            MetricDiscovery.validate_metrics(self.discovered_metrics)
-            logger.info(f"Discovered {len(self.discovered_metrics)} metrics")
+            # Get all tables
+            tables_query = """
+                SELECT name FROM sqlite_master 
+                WHERE type='table' 
+                ORDER BY name
+            """
+            tables = db_manager.execute_safe_query(tables_query)
+            table_names = [row['name'] for row in tables]
+            
+            # Get row counts for each table
+            table_info = {}
+            for table_name in table_names:
+                count_query = f"SELECT COUNT(*) as count FROM {table_name}"
+                count_result = db_manager.execute_safe_query(count_query)
+                
+                table_info[table_name] = {
+                    "row_count": count_result[0]['count'],
+                    "description": _get_table_description(table_name)
+                }
+            
+            return {
+                "available_tables": table_info,
+                "metric_types": [mt.value for mt in MetricType],
+                "usage_tip": "Use 'execute_sql_query' to get specific data from any table, or 'get_table_details' to see column structure"
+            }
         except Exception as e:
-            logger.error(f"Error discovering metrics: {e}")
-            self.discovered_metrics = {}
-
-    def _register_auth_tools(self):
-        """Register authentication tools."""
-        auth_tools = AuthTools(self)
-        auth_tools.register_tools(self.mcp)
-
-    def _register_metric_tools(self):
-        """Register metric access tools."""
-        metric_tools = MetricTools(self)
-        metric_tools.register_tools(self.mcp)
-
-    def _register_analysis_tools(self):
-        """Register data analysis tools."""
-        analysis_tools = AnalysisTools(self)
-        analysis_tools.register_tools(self.mcp)
-
-    def _register_resources(self):
-        """Register data reading resources."""
-        resource_providers = ResourceProviders(self)
-        resource_providers.register_resources(self.mcp)
-
-    def _register_prompts(self):
-        """Register prompt templates."""
-        prompt_templates = PromptTemplates(self)
-        prompt_templates.register_prompts(self.mcp)
-
-    def authenticate(self, email: str, password: str) -> bool:
-        """Perform authentication with Garmin Connect.
-
+            raise ValueError(f"Failed to explore database: {str(e)}")
+    
+    @mcp.tool()
+    def get_table_details(table_name: str) -> Dict[str, Any]:
+        """WHEN TO USE: When you need to see the structure and sample data of a specific table.
+        
+        Use this after 'explore_database_structure' when you want to understand what columns
+        are available in a table and see examples of the actual data.
+        
         Args:
-            email: Email address.
-            password: Password.
-
+            table_name: Name of the health data table (e.g., 'daily_health_metrics', 'activities')
+            
         Returns:
-            True if authentication successful, False otherwise.
+            Table structure with columns, data types, and sample records
         """
+        if not table_name or not table_name.strip():
+            raise ValueError("Table name cannot be empty")
+        
+        # Sanitize table name
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table_name):
+            raise ValueError("Invalid table name format")
+        
         try:
-            self.auth_client = AuthClient()
-            self.api_client = APIClient(auth_client=self.auth_client)
-            self.auth_client.login(email, password)
-            return True
-        except Exception as e:
-            logger.error(f"Authentication failed: {e}")
-            self.auth_client = None
-            self.api_client = None
-            return False
-
-    def logout(self):
-        """Perform logout from system."""
-        self.auth_client = None
-        self.api_client = None
-        logger.info("Logged out from Garmin Connect")
-
-    def is_authenticated(self) -> bool:
-        """Check if user is authenticated.
-
-        Returns:
-            True if user is authenticated.
-        """
-        return bool(self.auth_client and self.api_client)
-
-    def _validate_authentication(self) -> None:
-        """Validate that user is authenticated.
-
-        Raises:
-            ValueError: If user is not authenticated.
-        """
-        if not self.is_authenticated():
-            raise ValueError("Authentication required")
-
-    def _validate_metric_name(self, metric_name: str) -> None:
-        """Validate that metric name exists.
-
-        Args:
-            metric_name: Name of the metric to validate.
-
-        Raises:
-            ValueError: If metric name is not found.
-        """
-        if metric_name not in self.api_client.metrics:
-            available = list(self.api_client.metrics.keys())
-            raise ValueError(f"Unknown metric '{metric_name}'. Available: {available}")
-
-    def get_metric_data(
-        self, metric_name: str, date_input: Optional[Union[str]] = None
-    ) -> Any:
-        """Get metric data for specified date.
-
-        Args:
-            metric_name: Name of the metric.
-            date_input: Date (defaults to today).
-
-        Returns:
-            Metric data or None.
-
-        Raises:
-            ValueError: If user not authenticated or metric not found.
-        """
-        self._validate_authentication()
-        self._validate_metric_name(metric_name)
-        return self.api_client.metrics[metric_name].get(date_input)
-
-    def get_metric_history(
-        self, metric_name: str, days: int = 7, end_date: Optional[str] = None
-    ) -> List[Any]:
-        """Get historical metric data.
-
-        Args:
-            metric_name: Name of the metric.
-            days: Number of days.
-            end_date: End date (defaults to today).
-
-        Returns:
-            List of metric data.
-
-        Raises:
-            ValueError: If user not authenticated or metric not found.
-        """
-        self._validate_authentication()
-        self._validate_metric_name(metric_name)
-
-        # Limit days according to configuration
-        days = min(days, self.config.max_history_days)
-
-        return self.api_client.metrics[metric_name].list(end=end_date, days=days)
-
-    def format_metric_data(
-        self, data: Any, metric_name: str, compact: bool = False
-    ) -> str:
-        """Format metric data for display using generic approach.
-
-        Args:
-            data: Metric data object.
-            metric_name: Name of the metric.
-            compact: Compact display mode (currently unused, kept for compatibility).
-
-        Returns:
-            Formatted string using object's __str__ method or fallback.
-        """
-        if not data:
-            return "No data"
-
-        try:
-            # Use object's __str__ method if available and meaningful
-            if hasattr(data, "__str__") and not isinstance(
-                data, (str, int, float, bool)
-            ):
-                formatted = str(data)
-                # Check if __str__ was overridden (not default object.__str__)
-                if formatted and formatted != object.__str__(data):
-                    return formatted
-
-            # Fallback for objects with useful attributes
-            return self._format_object_attributes(data, compact)
-
-        except Exception as e:
-            logger.error(f"Error formatting {metric_name} data: {e}")
-            return f"Formatting error: {e!s}"
-
-    def _format_object_attributes(self, data: Any, compact: bool) -> str:
-        """Generic object attribute formatting as fallback.
-
-        Args:
-            data: Object to format.
-            compact: Whether to use compact formatting.
-
-        Returns:
-            Formatted string showing object attributes.
-        """
-        if hasattr(data, "__dict__"):
-            fields = data.__dict__
-            result = []
-            max_fields = 3 if compact else 8
-
-            for key, value in list(fields.items())[:max_fields]:
-                if value is not None and not key.startswith("_"):
-                    # Format value appropriately
-                    if isinstance(value, float):
-                        formatted_value = f"{value:.1f}"
-                    elif isinstance(value, int) and value > 1000:
-                        formatted_value = f"{value:,}"
-                    else:
-                        formatted_value = str(value)
-
-                    result.append(
-                        f"• {key.replace('_', ' ').title()}: {formatted_value}"
-                    )
-
-            return "\n".join(result) if result else "Data available"
-        else:
-            return str(data)
-
-    def run(self, transport: str = "stdio", **kwargs):
-        """Start MCP server.
-
-        Args:
-            transport: Transport type ("stdio" or "streamable-http").
-            **kwargs: Additional transport parameters.
-        """
-        # Only print debug info if explicitly in debug mode to avoid MCP protocol interference
-        if self.config.debug_mode:
-            self._log_debug("Starting Garmy MCP Server...")
-            self._log_debug(f"Transport: {transport}")
-            self._log_debug(f"Discovered metrics: {len(self.discovered_metrics)}")
-            self._log_debug("Server ready!")
-
-        try:
-            self.mcp.run(transport=transport, **kwargs)
-        except BaseExceptionGroup as eg:
-            # Handle exception groups from anyio TaskGroup
-            has_broken_resource = any(
-                isinstance(exc, anyio.BrokenResourceError) for exc in eg.exceptions
-            )
-            if has_broken_resource and self.config.debug_mode:
-                self._log_debug("MCP client disconnected (normal)")
-            if not has_broken_resource:
-                # Only re-raise if there are serious errors, not just disconnections
-                self._log_error(
-                    f"Error in MCP server: {eg}", eg if self.config.debug_mode else None
+            # Verify table exists
+            check_query = """
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name=?
+            """
+            check_result = db_manager.execute_safe_query(check_query, [table_name])
+            
+            if not check_result:
+                available_tables = db_manager.execute_safe_query(
+                    "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
                 )
-                raise
-        except anyio.BrokenResourceError:
-            # Normal client disconnection
-            if self.config.debug_mode:
-                self._log_debug("MCP client disconnected (normal)")
+                table_list = [row['name'] for row in available_tables]
+                raise ValueError(f"Table '{table_name}' does not exist. Available tables: {', '.join(table_list)}")
+            
+            # Get table schema using PRAGMA
+            schema_query = f"PRAGMA table_info({table_name})"
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(schema_query)
+                columns = cursor.fetchall()
+            
+            column_info = [{
+                'name': col[1],
+                'type': col[2],
+                'required': bool(col[3]),
+                'is_primary_key': bool(col[5])
+            } for col in columns]
+            
+            # Get sample data (latest 3 records)
+            sample_query = f"SELECT * FROM {table_name} ORDER BY rowid DESC LIMIT 3"
+            sample_data = db_manager.execute_safe_query(sample_query)
+            
+            return {
+                "table_name": table_name,
+                "columns": column_info,
+                "sample_data": sample_data,
+                "description": _get_table_description(table_name),
+                "usage_tip": f"Use 'execute_sql_query' with SELECT statements to get specific data from {table_name}"
+            }
+                
         except Exception as e:
-            self._log_error(
-                f"Error running MCP server: {e}", e if self.config.debug_mode else None
-            )
-            raise
-
-    def _log_error(self, message: str, exception: Optional[Exception] = None) -> None:
-        """Log error message with optional traceback.
-
+            raise ValueError(f"Failed to get table details: {str(e)}")
+    
+    @mcp.tool()
+    def execute_sql_query(
+        query: str,
+        params: Optional[List[Any]] = None
+    ) -> List[Dict[str, Any]]:
+        """WHEN TO USE: When you need to get specific data using SQL queries.
+        
+        This is the main tool for querying any data from the database. Use it to run SELECT queries
+        to analyze health metrics, activities, sync status, or find patterns across any tables.
+        
+        IMPORTANT: Only SELECT and WITH queries are allowed for security.
+        
         Args:
-            message: Error message to log.
-            exception: Optional exception for traceback.
+            query: SQL SELECT query (e.g., "SELECT metric_date, total_steps FROM daily_health_metrics WHERE user_id = 1")
+            params: Optional list of parameters for ? placeholders in query
+            
+        Example queries:
+        - Health metrics: "SELECT metric_date, sleep_duration_hours FROM daily_health_metrics WHERE user_id = 1 ORDER BY metric_date DESC LIMIT 10"
+        - Activities: "SELECT activity_date, activity_name, duration_seconds FROM activities WHERE user_id = 1"
+        - High step days: "SELECT metric_date, total_steps FROM daily_health_metrics WHERE total_steps > 10000"
+        - Timeseries data: "SELECT timestamp, value FROM timeseries WHERE metric_type = 'heart_rate'"
+        
+        Returns:
+            List of matching records as dictionaries
         """
-        # Use stderr for logging to avoid MCP protocol interference
-        import sys
+        if not query or not query.strip():
+            raise ValueError("Query cannot be empty")
+        
+        try:
+            return db_manager.execute_safe_query(query, params)
+        except Exception as e:
+            raise ValueError(f"Query execution failed: {str(e)}")
+    
+    @mcp.tool()
+    def get_health_summary(
+        user_id: int = 1,
+        days: int = 30
+    ) -> Dict[str, Any]:
+        """WHEN TO USE: When you want a quick overview of health metrics without writing SQL.
+        
+        This tool provides a ready-made summary of key health metrics over a specified period.
+        Use this for getting an overview before diving into specific analysis.
+        
+        Args:
+            user_id: User ID to analyze (default: 1)
+            days: Number of recent days to analyze (max 365, default: 30)
+            
+        Returns:
+            Summary statistics including averages for steps, sleep, heart rate, stress, and activity count
+        """
+        if days > 365:
+            raise ValueError("Days cannot exceed 365")
+        
+        if user_id < 1:
+            raise ValueError("User ID must be positive")
+        
+        try:
+            # Get health metrics summary
+            summary_query = """
+                SELECT 
+                    COUNT(*) as total_days_with_data,
+                    ROUND(AVG(total_steps), 0) as avg_daily_steps,
+                    ROUND(AVG(sleep_duration_hours), 1) as avg_sleep_hours,
+                    ROUND(AVG(resting_heart_rate), 0) as avg_resting_hr,
+                    ROUND(AVG(avg_stress_level), 0) as avg_stress_level,
+                    MIN(metric_date) as earliest_data_date,
+                    MAX(metric_date) as latest_data_date
+                FROM daily_health_metrics 
+                WHERE user_id = ? 
+                AND metric_date >= date('now', '-' || ? || ' days')
+            """
+            
+            summary_result = db_manager.execute_safe_query(summary_query, [user_id, days])
+            summary = summary_result[0] if summary_result else {}
+            
+            # Get activity count
+            activity_query = """
+                SELECT COUNT(*) as activity_count
+                FROM activities 
+                WHERE user_id = ? 
+                AND activity_date >= date('now', '-' || ? || ' days')
+            """
+            
+            activity_result = db_manager.execute_safe_query(activity_query, [user_id, days])
+            if activity_result:
+                summary['total_activities'] = activity_result[0]['activity_count']
+            
+            summary['analysis_period_days'] = days
+            summary['user_id'] = user_id
+            
+            return summary
+                
+        except Exception as e:
+            raise ValueError(f"Failed to generate health summary: {str(e)}")
+    
+    @mcp.resource("file://health_data_guide")
+    def health_data_guide() -> str:
+        """Complete guide to understanding and querying Garmin health data.
+        
+        This resource provides all the information needed to understand the available
+        health data and how to query it effectively.
+        """
+        return _get_health_data_guide()
+    
+    return mcp
 
-        sys.stderr.write(f"{message}\n")
-        sys.stderr.flush()
-        if exception and self.config.debug_mode:
-            import traceback
 
-            traceback.print_exception(
-                type(exception), exception, exception.__traceback__, file=sys.stderr
-            )
+def _get_table_description(table_name: str) -> str:
+    """Get human-readable description for table."""
+    descriptions = {
+        "daily_health_metrics": "Daily health summaries including steps, sleep, heart rate, stress, and other key metrics",
+        "timeseries": "High-frequency data like heart rate readings throughout the day, stress levels, body battery",
+        "activities": "Individual workouts and physical activities with performance metrics",
+        "sync_status": "System table tracking data synchronization status (usually not needed for health analysis)"
+    }
+    return descriptions.get(table_name, "Health data table")
 
-    def _log_debug(self, message: str) -> None:
-        """Log debug message to stderr if debug mode is enabled."""
-        if self.config.debug_mode:
-            import sys
 
-            sys.stderr.write(f"DEBUG: {message}\n")
-            sys.stderr.flush()
+def _get_health_data_guide() -> str:
+    """Get comprehensive guide for health data analysis."""
+    return '''
+# Garmin Health Data Analysis Guide
+
+## Quick Start
+1. Use `explore_database_structure` first to see what data is available
+2. Use `get_table_details` to understand specific tables
+3. Use `execute_sql_query` for custom analysis or `get_health_summary` for quick overviews
+
+## Main Data Tables
+
+### daily_health_metrics
+**WHAT**: Daily summaries of all health metrics
+**CONTAINS**: steps, sleep hours, heart rate averages, stress levels, body battery
+**COMMON QUERIES**: 
+- Recent trends: `SELECT metric_date, total_steps, sleep_duration_hours FROM daily_health_metrics WHERE user_id = 1 ORDER BY metric_date DESC LIMIT 30`
+- Sleep analysis: `SELECT metric_date, sleep_duration_hours, deep_sleep_hours FROM daily_health_metrics WHERE sleep_duration_hours IS NOT NULL`
+
+### activities
+**WHAT**: Individual workouts and physical activities
+**CONTAINS**: activity type, duration, heart rate, training load
+**COMMON QUERIES**:
+- Recent workouts: `SELECT activity_date, activity_name, duration_seconds/60 as minutes FROM activities ORDER BY activity_date DESC`
+- Performance trends: `SELECT activity_name, AVG(avg_heart_rate), AVG(training_load) FROM activities GROUP BY activity_name`
+
+### timeseries
+**WHAT**: High-frequency data throughout the day
+**CONTAINS**: heart rate readings, stress measurements, body battery levels with timestamps
+**USE CASE**: Detailed intraday analysis
+
+## Health Metrics Available
+- **Steps & Movement**: total_steps, total_distance_meters
+- **Sleep**: sleep_duration_hours, deep_sleep_hours, rem_sleep_hours
+- **Heart Rate**: resting_heart_rate, max_heart_rate, average_heart_rate
+- **Stress & Recovery**: avg_stress_level, body_battery_high/low
+- **Training**: training_readiness_score, activities data
+
+## Tips for Analysis
+- Always include `user_id = 1` in WHERE clauses
+- Use `metric_date` for date filtering in daily_health_metrics
+- Use `activity_date` for date filtering in activities
+- NULL values are common - use `IS NOT NULL` to filter out missing data
+- For recent data: `WHERE metric_date >= date('now', '-30 days')`
+
+## Common Analysis Patterns
+1. **Trend Analysis**: Compare metrics over time periods
+2. **Correlation Analysis**: Look for relationships between sleep, stress, and performance
+3. **Goal Tracking**: Monitor progress toward targets (steps, sleep duration)
+4. **Activity Analysis**: Understand workout patterns and performance
+        '''.strip()
+
+
+# Legacy function for backwards compatibility
+def create_mcp_server_from_env() -> FastMCP:
+    """Create MCP server from environment variables (backwards compatibility)."""
+    return create_mcp_server()
+
+
+# Main entry point for MCP server
+def main():
+    """Main entry point for the Garmin LocalDB MCP server."""
+    try:
+        mcp = create_mcp_server()
+        mcp.run()
+    except Exception as e:
+        print(f"Failed to start MCP server: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    main()
