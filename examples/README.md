@@ -301,16 +301,12 @@ for day in week_data:
 print("Available metrics:", list(api_client.metrics.keys()))
 ```
 
-### Async Operations
+### Multiple Metrics Access
 ```python
-import asyncio
-
-async def get_multiple_metrics():
-    # Fetch multiple metrics concurrently
-    sleep_task = api_client.metrics.get('sleep').get_async()
-    hrv_task = api_client.metrics.get('hrv').get_async()
-    
-    sleep_data, hrv_data = await asyncio.gather(sleep_task, hrv_task)
+# Access multiple metrics
+def get_multiple_metrics():
+    sleep_data = api_client.metrics.get('sleep').get()
+    hrv_data = api_client.metrics.get('hrv').get()
     return sleep_data, hrv_data
 ```
 

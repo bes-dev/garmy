@@ -17,7 +17,7 @@ An AI-powered Python library for Garmin Connect API designed specifically for he
 - **💾 Local Database**: Built-in SQLite database for local health data storage and sync
 - **🖥️ CLI Tools**: Command-line interfaces for data synchronization and MCP server management
 - **🤖 MCP Server**: Model Context Protocol server for AI assistant integration (Claude Desktop)
-- **⚡ Real-time Processing**: Async/await support for high-performance AI applications
+- **⚡ High Performance**: Optimized for high-performance AI applications
 - **🛡️ Type Safe**: Full type hints and runtime validation for reliable AI workflows
 - **🔄 Auto-Discovery**: Automatic metric registration and API endpoint discovery
 
@@ -167,18 +167,15 @@ Garmy consists of three main modules:
 ```python
 # Build AI health monitoring agents
 from garmy import APIClient, AuthClient
-import asyncio
 
-async def health_agent():
+def health_agent():
     auth_client = AuthClient()
     api_client = APIClient(auth_client=auth_client)
     
-    # Login and get multiple metrics concurrently
-    await auth_client.login_async(email, password)
-    sleep_task = api_client.metrics.get('sleep').get_async()
-    readiness_task = api_client.metrics.get('training_readiness').get_async()
-    
-    sleep_data, readiness_data = await asyncio.gather(sleep_task, readiness_task)
+    # Login and get metrics
+    auth_client.login(email, password)
+    sleep_data = api_client.metrics.get('sleep').get()
+    readiness_data = api_client.metrics.get('training_readiness').get()
     
     # AI analysis logic here
     return analyze_health_trends(sleep_data, readiness_data)
@@ -289,7 +286,6 @@ Garmy was heavily inspired by the excellent [garth](https://github.com/matin/gar
 
 - Enhanced modularity and extensibility
 - Full type safety with mypy compliance
-- Comprehensive async/await support
 - Auto-discovery system for metrics
 - Local database integration
 - MCP server for AI assistants
