@@ -393,7 +393,7 @@ With proper setup, you can ask Claude questions like:
 
 ## 🔗 Related Documentation
 
+- **[MCP Usage Example](mcp-example.md)** - Complete walkthrough from sync to AI analysis ⭐
 - **[MCP Server Guide](mcp-server-guide.md)** - Complete MCP server documentation
-- **[MCP Tools Reference](mcp-tools-reference.md)** - Detailed tool documentation
 - **[Database Schema](database-schema.md)** - Understanding your health data
 - **[LocalDB Guide](localdb-guide.md)** - Setting up data synchronization

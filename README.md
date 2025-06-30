@@ -144,28 +144,22 @@ Garmy consists of three main modules:
 
 ### 📖 Getting Started
 - **[Quick Start Guide](docs/quick-start.md)** - Get up and running in minutes
-- **[Installation Guide](docs/quick-start.md#installation)** - Detailed installation instructions
-- **[Basic Examples](docs/examples/basic-usage.md)** - Simple usage patterns
+- **[Basic Examples](examples/README.md)** - Simple usage patterns
 
 ### 🏗️ Core Features  
-- **[API Reference](docs/api-reference.md)** - Complete API documentation
-- **[Configuration](docs/configuration.md)** - Environment variables and settings
-- **[Available Metrics](docs/api-reference.md#metrics)** - All supported health metrics
+- **[Available Metrics](#-available-health-metrics)** - All supported health metrics in this README
 
 ### 💾 Local Database
 - **[LocalDB Guide](docs/localdb-guide.md)** - Complete local storage guide
 - **[Database Schema](docs/database-schema.md)** - Schema and table structure
-- **[Sync Operations](docs/sync-operations.md)** - Data synchronization patterns
 
 ### 🤖 AI Integration
+- **[MCP Usage Example](docs/mcp-example.md)** - Complete walkthrough from sync to AI analysis
 - **[MCP Server Guide](docs/mcp-server-guide.md)** - AI assistant integration
 - **[Claude Desktop Setup](docs/claude-desktop-integration.md)** - Step-by-step Claude integration
-- **[MCP Tools Reference](docs/mcp-tools-reference.md)** - Available AI tools
 
 ### 🔬 Advanced Usage
-- **[AI Health Analytics](docs/examples/ai-health-analytics.md)** - Building AI health applications
-- **[Advanced Workflows](docs/examples/advanced-workflows.md)** - Complex analysis patterns
-- **[Contributing Guide](docs/contributing.md)** - How to contribute
+- **[Examples Directory](examples/)** - Comprehensive usage examples
 
 ## 🎯 Use Cases
 

@@ -295,5 +295,4 @@ Always use `IS NOT NULL` checks in analysis queries.
 
 - **[LocalDB Guide](localdb-guide.md)** - Working with the database
 - **[MCP Server Guide](mcp-server-guide.md)** - Querying via MCP
-- **[Sync Operations](sync-operations.md)** - Data synchronization
-- **[API Reference](api-reference.md)** - Programmatic access
+- **[Quick Start Guide](quick-start.md)** - Getting started

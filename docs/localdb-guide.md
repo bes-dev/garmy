@@ -301,6 +301,6 @@ stats = sync_manager.sync_range(user_id=1, start_date=start_date, end_date=end_d
 ## 🔗 Related Documentation
 
 - **[Database Schema](database-schema.md)** - Detailed schema documentation
-- **[Sync Operations](sync-operations.md)** - Advanced sync patterns
 - **[MCP Server Guide](mcp-server-guide.md)** - AI integration with local data
-- **[API Reference](api-reference.md)** - Complete API documentation
+- **[Quick Start Guide](quick-start.md)** - Getting started
+- **[Examples](../examples/)** - Usage examples

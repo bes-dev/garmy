@@ -370,7 +370,7 @@ garmy-mcp server --database health.db \
 
 ## 🔗 Related Documentation
 
+- **[MCP Usage Example](mcp-example.md)** - Complete walkthrough from sync to AI analysis ⭐
 - **[Claude Desktop Integration](claude-desktop-integration.md)** - Detailed Claude setup
-- **[MCP Tools Reference](mcp-tools-reference.md)** - Complete tool documentation
 - **[Database Schema](database-schema.md)** - Understanding the data structure
 - **[LocalDB Guide](localdb-guide.md)** - Setting up local data storage
