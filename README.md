@@ -126,7 +126,7 @@ Garmy consists of three main modules:
 
 ### 🔌 **Core Library**
 - **Garmin Connect API**: Type-safe access to all health metrics
-- **Async Support**: High-performance concurrent operations
+- **High Performance**: Optimized concurrent operations
 - **Auto-Discovery**: Automatic endpoint and metric detection
 
 ### 💾 **LocalDB Module** 
