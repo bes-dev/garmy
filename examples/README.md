@@ -346,7 +346,9 @@ async def get_multiple_metrics():
 
 ### Getting Help
 
-- Check the main documentation
+- Check the [main documentation](../docs/README.md)
+- Review [Quick Start Guide](../docs/quick-start.md) for setup help
+- See [API Reference](../docs/api-reference.md) for detailed usage
 - Review error messages for specific guidance
 - Ensure your device supports the requested metric type
 

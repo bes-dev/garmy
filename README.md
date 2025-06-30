@@ -15,7 +15,8 @@ An AI-powered Python library for Garmin Connect API designed specifically for he
 - **🏥 Health Analytics**: Advanced data analysis capabilities for fitness and wellness insights
 - **📊 Rich Metrics**: Complete access to sleep, heart rate, stress, training readiness, and more
 - **💾 Local Database**: Built-in SQLite database for local health data storage and sync
-- **🖥️ CLI Tool**: Command-line interface for data synchronization and management
+- **🖥️ CLI Tools**: Command-line interfaces for data synchronization and MCP server management
+- **🤖 MCP Server**: Model Context Protocol server for AI assistant integration (Claude Desktop)
 - **⚡ Real-time Processing**: Async/await support for high-performance AI applications
 - **🛡️ Type Safe**: Full type hints and runtime validation for reliable AI workflows
 - **🔄 Auto-Discovery**: Automatic metric registration and API endpoint discovery
@@ -27,6 +28,17 @@ An AI-powered Python library for Garmin Connect API designed specifically for he
 pip install garmy
 ```
 
+### With Optional Features
+```bash
+# For local database functionality
+pip install garmy[localdb]
+
+# For MCP server functionality (AI assistants)
+pip install garmy[mcp]
+
+# For everything
+pip install garmy[all]
+```
 
 ### Development Installation
 ```bash
@@ -37,41 +49,7 @@ pip install -e ".[dev]"
 
 ## 🚀 Quick Start
 
-### AI Agent Example (Recommended)
-
-```python
-from garmy import AuthClient, APIClient
-import asyncio
-
-# Create an AI health agent
-async def health_agent():
-    auth_client = AuthClient()
-    api_client = APIClient(auth_client=auth_client)
-    
-    # Login using environment variables (secure for AI agents)
-    await auth_client.login_async(
-        email=os.getenv('GARMIN_EMAIL'),
-        password=os.getenv('GARMIN_PASSWORD')
-    )
-    
-    # AI agent can now analyze multiple health metrics concurrently
-    sleep_task = api_client.metrics.get('sleep').get_async()
-    readiness_task = api_client.metrics.get('training_readiness').get_async()
-    hrv_task = api_client.metrics.get('hrv').get_async()
-    
-    sleep_data, readiness_data, hrv_data = await asyncio.gather(
-        sleep_task, readiness_task, hrv_task
-    )
-    
-    # AI analysis logic here
-    health_score = analyze_health_trends(sleep_data, readiness_data, hrv_data)
-    return health_score
-
-# Run AI health agent
-health_insights = asyncio.run(health_agent())
-```
-
-### Basic Usage
+### Basic API Usage
 
 ```python
 from garmy import AuthClient, APIClient
@@ -90,104 +68,45 @@ print(f"Training Readiness Score: {readiness[0].score}/100")
 # Get sleep data for specific date
 sleep_data = api_client.metrics.get('sleep').get('2023-12-01')
 print(f"Sleep Score: {sleep_data[0].overall_sleep_score}")
-
-# Get multiple days of data
-weekly_steps = api_client.metrics['steps'].list(days=7)
 ```
 
-### Async Usage
-
-```python
-import asyncio
-from garmy import AuthClient, APIClient
-
-async def main():
-    auth_client = AuthClient()
-    api_client = APIClient(auth_client=auth_client)
-    
-    # Login
-    await auth_client.login_async("your_email@garmin.com", "your_password")
-    
-    # Get multiple metrics concurrently
-    sleep_task = api_client.metrics.get('sleep').get_async()
-    hr_task = api_client.metrics.get('heart_rate').get_async()
-    
-    sleep_data, hr_data = await asyncio.gather(sleep_task, hr_task)
-
-asyncio.run(main())
-```
-
-## 💾 Local Database & CLI Tool
-
-### CLI Tool for Data Synchronization
-
-Garmy includes a powerful CLI tool for local data synchronization and management:
+### Local Database & CLI Tools
 
 ```bash
-# Sync last 7 days of data
+# Sync recent health data to local database
 garmy-sync sync --last-days 7
 
-# Sync specific date range
-garmy-sync sync --date-range 2024-01-01 2024-01-31
-
-# Sync specific metrics only
-garmy-sync sync --metrics DAILY_SUMMARY,SLEEP,BODY_BATTERY
-
-# Show sync status
+# Check sync status
 garmy-sync status
 
-# Reset failed sync records
-garmy-sync reset --force
+# Start MCP server for AI assistants
+garmy-mcp server --database health.db
+
+# Show database info
+garmy-mcp info --database health.db
+
+# Get configuration examples
+garmy-mcp config
 ```
 
-### Local Database Usage
+### AI Assistant Integration (Claude Desktop)
 
-Store and query health data locally using the built-in SQLite database:
+Add to your Claude Desktop configuration (`~/.claude_desktop_config.json`):
 
-```python
-from garmy.localdb import SyncManager, HealthDB
-from datetime import date, timedelta
-
-# Initialize sync manager
-sync_manager = SyncManager(db_path="my_health.db")
-sync_manager.initialize("email@garmin.com", "password")
-
-# Sync data to local database
-end_date = date.today()
-start_date = end_date - timedelta(days=30)
-
-stats = sync_manager.sync_range(
-    user_id=1,
-    start_date=start_date,
-    end_date=end_date
-)
-
-print(f"Synced: {stats['completed']} records")
-
-# Query local data
-health_data = sync_manager.query_health_metrics(
-    user_id=1,
-    start_date=start_date,
-    end_date=end_date
-)
-
-activities = sync_manager.query_activities(
-    user_id=1,
-    start_date=start_date,
-    end_date=end_date
-)
+```json
+{
+  "mcpServers": {
+    "garmy-localdb": {
+      "command": "garmy-mcp",
+      "args": ["server", "--database", "/path/to/health.db", "--max-rows", "500"]
+    }
+  }
+}
 ```
 
-### Database Schema
+Now ask Claude: *"What health data do I have available? Analyze my sleep patterns over the last month."*
 
-The local database stores health data in optimized tables:
-
-- **`daily_health_metrics`**: Normalized daily health data (steps, sleep, HR, etc.)
-- **`timeseries`**: High-frequency data (heart rate, stress, body battery)
-- **`activities`**: Individual workouts and activities
-- **`sync_status`**: Sync status tracking for each metric per date
-
-## 📊 Available Metrics
+## 📊 Available Health Metrics
 
 Garmy provides access to a comprehensive set of Garmin Connect metrics:
 
@@ -199,192 +118,132 @@ Garmy provides access to a comprehensive set of Garmin Connect metrics:
 | `steps` | Daily step counts and goals | `api_client.metrics.get('steps').list(days=7)` |
 | `training_readiness` | Training readiness scores and factors | `api_client.metrics.get('training_readiness').get()` |
 | `body_battery` | Body battery energy levels | `api_client.metrics.get('body_battery').get()` |
-| `hrv` | Heart rate variability data | `api_client.metrics.get('hrv').get()` |
-| `respiration` | Respiration rate measurements | `api_client.metrics.get('respiration').get()` |
-| `calories` | Daily calorie burn data | `api_client.metrics.get('calories').get()` |
 | `activities` | Activity summaries and details | `api_client.metrics.get('activities').list(days=30)` |
-| `daily_summary` | Comprehensive daily health summary | `api_client.metrics.get('daily_summary').get()` |
 
-## 📊 AI Health Data Analysis
+## 🧑‍💻 Architecture Overview
 
-### Building AI Health Models
+Garmy consists of three main modules:
 
+### 🔌 **Core Library**
+- **Garmin Connect API**: Type-safe access to all health metrics
+- **Async Support**: High-performance concurrent operations
+- **Auto-Discovery**: Automatic endpoint and metric detection
+
+### 💾 **LocalDB Module** 
+- **SQLite Storage**: Local database for health data persistence
+- **Data Sync**: Robust synchronization with conflict resolution
+- **CLI Tools**: `garmy-sync` for data management
+
+### 🤖 **MCP Server Module**
+- **AI Integration**: Model Context Protocol server for AI assistants
+- **Secure Access**: Read-only database access with query validation
+- **Claude Desktop**: Native integration with Claude Desktop
+- **CLI Tools**: `garmy-mcp` for server management
+
+## 📚 Documentation
+
+### 📖 Getting Started
+- **[Quick Start Guide](docs/quick-start.md)** - Get up and running in minutes
+- **[Installation Guide](docs/quick-start.md#installation)** - Detailed installation instructions
+- **[Basic Examples](docs/examples/basic-usage.md)** - Simple usage patterns
+
+### 🏗️ Core Features  
+- **[API Reference](docs/api-reference.md)** - Complete API documentation
+- **[Configuration](docs/configuration.md)** - Environment variables and settings
+- **[Available Metrics](docs/api-reference.md#metrics)** - All supported health metrics
+
+### 💾 Local Database
+- **[LocalDB Guide](docs/localdb-guide.md)** - Complete local storage guide
+- **[Database Schema](docs/database-schema.md)** - Schema and table structure
+- **[Sync Operations](docs/sync-operations.md)** - Data synchronization patterns
+
+### 🤖 AI Integration
+- **[MCP Server Guide](docs/mcp-server-guide.md)** - AI assistant integration
+- **[Claude Desktop Setup](docs/claude-desktop-integration.md)** - Step-by-step Claude integration
+- **[MCP Tools Reference](docs/mcp-tools-reference.md)** - Available AI tools
+
+### 🔬 Advanced Usage
+- **[AI Health Analytics](docs/examples/ai-health-analytics.md)** - Building AI health applications
+- **[Advanced Workflows](docs/examples/advanced-workflows.md)** - Complex analysis patterns
+- **[Contributing Guide](docs/contributing.md)** - How to contribute
+
+## 🎯 Use Cases
+
+### For AI Developers
 ```python
+# Build AI health monitoring agents
 from garmy import APIClient, AuthClient
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.preprocessing import StandardScaler
+import asyncio
 
-# Setup AI health analysis pipeline
-auth_client = AuthClient()
-api_client = APIClient(auth_client=auth_client)
-auth_client.login("email", "password")
-
-# Gather comprehensive health data for AI model
-async def build_health_dataset(days=90):
-    # Collect multiple health metrics concurrently
-    tasks = [
-        api_client.metrics.get('sleep').list_async(days=days),
-        api_client.metrics.get('training_readiness').list_async(days=days),
-        api_client.metrics.get('hrv').list_async(days=days),
-        api_client.metrics.get('stress').list_async(days=days),
-        api_client.metrics.get('body_battery').list_async(days=days)
-    ]
+async def health_agent():
+    auth_client = AuthClient()
+    api_client = APIClient(auth_client=auth_client)
     
-    sleep_data, readiness_data, hrv_data, stress_data, battery_data = await asyncio.gather(*tasks)
+    # Login and get multiple metrics concurrently
+    await auth_client.login_async(email, password)
+    sleep_task = api_client.metrics.get('sleep').get_async()
+    readiness_task = api_client.metrics.get('training_readiness').get_async()
     
-    # Build comprehensive health dataset
-    health_df = pd.DataFrame()
-    # ... merge and process data for AI model training
+    sleep_data, readiness_data = await asyncio.gather(sleep_task, readiness_task)
     
-    return health_df
-
-# Train AI model to predict training readiness
-def train_readiness_predictor(health_df):
-    features = ['sleep_score', 'hrv_rmssd', 'stress_avg', 'body_battery_drained']
-    X = health_df[features]
-    y = health_df['training_readiness_score']
-    
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X, y)
-    
-    return model
-
-# AI-powered health insights
-def generate_health_insights(model, current_metrics):
-    predicted_readiness = model.predict([current_metrics])[0]
-    
-    insights = {
-        'readiness_prediction': predicted_readiness,
-        'recommendation': 'high_intensity' if predicted_readiness > 75 else 'recovery',
-        'confidence': model.score(X_test, y_test)
-    }
-    
-    return insights
+    # AI analysis logic here
+    return analyze_health_trends(sleep_data, readiness_data)
 ```
 
-### AI-Powered Health Monitoring
+### For Data Analysts
+```bash
+# Local database analysis workflow
+garmy-sync sync --last-days 90  # Sync 3 months of data
+garmy-mcp server --database health.db  # Start MCP server
+# Use Claude Desktop or Python to analyze trends, correlations, patterns
+```
 
+### For Health Researchers  
 ```python
-# Create an AI health monitoring agent
-class HealthMonitoringAgent:
-    def __init__(self, api_client):
-        self.api_client = api_client
-        self.health_model = self.load_trained_model()
-    
-    async def daily_health_check(self):
-        """Perform daily AI-powered health analysis"""
-        # Get today's metrics
-        today_data = await self.get_current_metrics()
-        
-        # AI analysis
-        health_score = self.health_model.predict_health_score(today_data)
-        recommendations = self.generate_recommendations(health_score, today_data)
-        alerts = self.check_health_alerts(today_data)
-        
-        return {
-            'health_score': health_score,
-            'recommendations': recommendations,
-            'alerts': alerts,
-            'insights': self.generate_insights(today_data)
-        }
-    
-    def generate_recommendations(self, health_score, data):
-        """AI-generated personalized health recommendations"""
-        if health_score > 80:
-            return "Great day for high-intensity training!"
-        elif health_score > 60:
-            return "Moderate activity recommended. Focus on technique."
-        else:
-            return "Prioritize recovery today. Light movement only."
-    
-    async def weekly_health_report(self):
-        """Generate comprehensive AI health report"""
-        week_data = await self.api_client.metrics.get('daily_summary').list_async(days=7)
-        
-        # AI trend analysis
-        trends = self.analyze_trends(week_data)
-        predictions = self.predict_next_week(week_data)
-        
-        return self.format_health_report(trends, predictions)
+# Large-scale health data collection
+from garmy.localdb import SyncManager
 
-# Usage
-agent = HealthMonitoringAgent(api_client)
-daily_insights = await agent.daily_health_check()
-weekly_report = await agent.weekly_health_report()
+sync_manager = SyncManager(db_path="research_data.db")
+sync_manager.initialize(email, password)
+
+# Collect comprehensive health dataset
+stats = sync_manager.sync_range(
+    user_id=1,
+    start_date=date(2023, 1, 1),
+    end_date=date.today(),
+    metrics=[MetricType.SLEEP, MetricType.HRV, MetricType.STRESS]
+)
 ```
 
-## 🧑‍💻 Development
+## 🛡️ Security & Privacy
 
-### Running Examples
+- **🔒 Local Data**: All health data stored locally in SQLite
+- **🔐 Read-Only MCP**: AI assistants have read-only database access
+- **🛡️ Query Validation**: SQL injection prevention and query limits
+- **🔑 Secure Auth**: OAuth token management with automatic refresh
+- **🚫 No Data Sharing**: Health data never leaves your local environment
+
+## 🧪 Examples
 
 Check out the `examples/` directory for comprehensive usage examples:
 
 ```bash
-# Basic authentication example
-python examples/basic_auth.py
+# Basic authentication and metrics
+python examples/basic_usage.py
 
-# Sleep analysis demo
-python examples/sleep_demo.py
-
-# Training readiness analysis
-python examples/training_readiness_demo.py
-
-# Local database sync example
+# Local database operations
 python examples/localdb_demo.py
 
-# CLI tool usage
-garmy-sync sync --last-days 7
-garmy-sync status
+# MCP server configuration
+python examples/mcp_server_example.py
+
+# AI health analytics
+python examples/ai_health_analytics.py
 ```
 
-### Adding Custom Metrics
+## 🔧 Development
 
-Garmy's modular architecture makes it easy to add new metrics:
-
-```python
-from dataclasses import dataclass
-from garmy.core.base import BaseMetric
-
-@dataclass
-class CustomMetric(BaseMetric):
-    endpoint_path = "/usersummary-service/stats/custom/{date}"
-
-    custom_field: int
-    timestamp: str
-    
-    def validate(self) -> bool:
-        """Custom validation logic"""
-        return self.custom_field > 0
-```
-
-### Configuration
-
-Customize Garmy behavior with configuration:
-
-```python
-from garmy.core.config import set_config, GarmyConfig
-
-# Create custom configuration
-config = GarmyConfig(
-    request_timeout=30,
-    retries=3,
-    max_workers=10,
-    default_user_agent="MyApp/1.0"
-)
-
-# Apply configuration
-set_config(config)
-
-# Or use environment variables
-import os
-os.environ['GARMY_REQUEST_TIMEOUT'] = '30'
-os.environ['GARMY_MAX_WORKERS'] = '10'
-```
-
-### Testing
-
+### Running Tests
 ```bash
 # Install development dependencies
 make install-dev
@@ -394,152 +253,41 @@ make test
 
 # Run specific test modules
 make test-core      # Core functionality
-make test-auth      # Authentication
-make test-metrics   # Metrics
+make test-localdb   # LocalDB module
+make test-mcp       # MCP server
 
 # Check code quality
 make lint
 make quick-check
 ```
 
-## 🔧 Advanced Usage
-
-### Async Operations
-
+### Adding Custom Metrics
 ```python
-import asyncio
-from garmy import APIClient, AuthClient
+from dataclasses import dataclass
+from garmy.core.base import BaseMetric
 
-async def analyze_weekly_data():
-    auth_client = AuthClient()
-    api_client = APIClient(auth_client=auth_client)
+@dataclass
+class CustomMetric(BaseMetric):
+    endpoint_path = "/usersummary-service/stats/custom/{date}"
     
-    # Async login
-    await auth_client.login_async("email", "password")
+    custom_field: int
+    timestamp: str
     
-    # Fetch multiple metrics concurrently
-    tasks = [
-        api_client.metrics.get('sleep').list_async(days=7),
-        api_client.metrics.get('steps').list_async(days=7),
-        api_client.metrics.get('stress').list_async(days=7)
-    ]
-    
-    sleep_data, steps_data, stress_data = await asyncio.gather(*tasks)
-    
-    return {
-        'sleep': sleep_data,
-        'steps': steps_data,
-        'stress': stress_data
-    }
-
-# Run async analysis
-data = asyncio.run(analyze_weekly_data())
+    def validate(self) -> bool:
+        return self.custom_field > 0
 ```
-
-### Custom Error Handling
-
-```python
-from garmy.core.exceptions import APIError, AuthError, GarmyError
-
-try:
-    auth_client.login("wrong_email", "wrong_password")
-except AuthError as e:
-    print(f"Authentication failed: {e}")
-except APIError as e:
-    print(f"API error: {e}")
-except GarmyError as e:
-    print(f"General Garmy error: {e}")
-```
-
-### Rate Limiting & Retries
-
-```python
-from garmy.core.config import set_config, GarmyConfig
-
-# Configure retry behavior
-config = GarmyConfig(
-    retries=5,
-    backoff_factor=1.0,
-    max_workers=5  # Limit concurrent requests
-)
-set_config(config)
-```
-
-## 🛡️ Security for AI Health Applications
-
-### AI Agent Security Best Practices
-
-1. **Environment Variables**: Essential for AI agents - store credentials securely outside code
-2. **Data Security**: Use environment variables to prevent credential exposure to external services
-3. **OAuth Token Management**: Garmy handles OAuth tokens securely with automatic refresh for long-running AI agents
-4. **HTTPS Only**: All communications use HTTPS with certificate verification
-5. **AI Data Privacy**: Health data never leaves your local environment unless explicitly exported
-6. **Secure AI Pipelines**: Design AI workflows that protect sensitive health information
-
-### Best Practices
-
-```python
-import os
-from garmy import AuthClient
-
-# ✅ Good: Use environment variables
-email = os.getenv('GARMIN_EMAIL')
-password = os.getenv('GARMIN_PASSWORD')
-
-# ❌ Bad: Hardcode credentials
-# email = "your_email@example.com"
-# password = "your_password"
-
-auth_client = AuthClient()
-auth_client.login(email, password)
-```
-
-## 📝 API Reference
-
-### Core Classes
-
-- **`AuthClient`**: Handles authentication and session management
-- **`APIClient`**: Main interface for accessing Garmin Connect data
-- **`MetricAccessor`**: Provides access to specific metrics
-
-### Configuration Classes
-
-- **`GarmyConfig`**: Main configuration class
-- **`ConfigManager`**: Configuration management utilities
-
-### Metrics Classes
-
-Each metric has its own dataclass with type-safe fields. Examples:
-- **`SleepData`**: Sleep tracking information
-- **`HeartRateData`**: Heart rate statistics
-- **`StepsData`**: Step count and goals
-- **`TrainingReadinessData`**: Training readiness scores
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](DEVELOPMENT.md) for details.
+We welcome contributions! Please see our [Contributing Guide](docs/contributing.md) for details.
 
 ### Development Setup
-
 ```bash
-# Clone repository
 git clone https://github.com/bes-dev/garmy.git
 cd garmy
-
-# Install in development mode
 make install-dev
-
-# Run quality checks
-make ci
+make ci  # Run quality checks
 ```
-
-### Submitting Changes
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/new-feature`
-3. Make your changes
-4. Run tests: `make ci`
-5. Submit a pull request
 
 ## 🙏 Acknowledgments
 
@@ -549,6 +297,8 @@ Garmy was heavily inspired by the excellent [garth](https://github.com/matin/gar
 - Full type safety with mypy compliance
 - Comprehensive async/await support
 - Auto-discovery system for metrics
+- Local database integration
+- MCP server for AI assistants
 - Modern Python architecture and testing practices
 
 Special thanks to the garth project and its contributors for pioneering accessible Garmin Connect API access.
@@ -563,11 +313,11 @@ This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENS
 
 ## 🔗 Links
 
-- **Documentation**: [DEVELOPMENT.md](DEVELOPMENT.md)
-- **Examples**: [examples/](examples/)
-- **Issues**: [GitHub Issues](https://github.com/bes-dev/garmy/issues)
-- **PyPI**: [https://pypi.org/project/garmy/](https://pypi.org/project/garmy/)
+- **[Documentation](docs/)** - Complete documentation
+- **[PyPI Package](https://pypi.org/project/garmy/)** - Install via pip
+- **[GitHub Issues](https://github.com/bes-dev/garmy/issues)** - Bug reports and feature requests
+- **[Examples](examples/)** - Usage examples and tutorials
 
 ---
 
-*Garmy makes Garmin Connect data accessible with modern Python practices, type safety, and AI assistant integration.*
+*Garmy makes Garmin Connect data accessible with modern Python practices, type safety, and AI assistant integration for building intelligent health applications.*
