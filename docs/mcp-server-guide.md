@@ -24,8 +24,12 @@ garmy-sync sync --last-days 30
 # Basic usage
 garmy-mcp server --database health.db
 
+# Alternative: via python -m
+python -m garmy.mcp server --database health.db
+
 # With custom configuration
 garmy-mcp server --database health.db --max-rows 500 --enable-query-logging
+python -m garmy.mcp server --database health.db --max-rows 500 --enable-query-logging
 ```
 
 ### 4. Claude Desktop Integration
@@ -37,6 +41,18 @@ Add to `~/.claude_desktop_config.json`:
     "garmy-localdb": {
       "command": "garmy-mcp",
       "args": ["server", "--database", "/path/to/health.db", "--max-rows", "500"]
+    }
+  }
+}
+```
+
+**Alternative: Using python -m**
+```json
+{
+  "mcpServers": {
+    "garmy-localdb": {
+      "command": "python",
+      "args": ["-m", "garmy.mcp", "server", "--database", "/path/to/health.db", "--max-rows", "500"]
     }
   }
 }
@@ -160,6 +176,11 @@ Complete guide to understanding and querying Garmin health data, including:
 garmy-mcp server --database health.db \
   --max-rows 100 \
   --max-rows-absolute 500
+
+# Alternative: via python -m
+python -m garmy.mcp server --database health.db \
+  --max-rows 100 \
+  --max-rows-absolute 500
 ```
 
 ### Development Configuration (Permissive with Logging)
@@ -168,11 +189,23 @@ garmy-mcp server --database health.db \
   --max-rows 2000 \
   --enable-query-logging \
   --verbose
+
+# Alternative: via python -m
+python -m garmy.mcp server --database health.db \
+  --max-rows 2000 \
+  --enable-query-logging \
+  --verbose
 ```
 
 ### Debug Configuration (Relaxed Validation)
 ```bash
 garmy-mcp server --database health.db \
+  --disable-strict-validation \
+  --enable-query-logging \
+  --verbose
+
+# Alternative: via python -m
+python -m garmy.mcp server --database health.db \
   --disable-strict-validation \
   --enable-query-logging \
   --verbose

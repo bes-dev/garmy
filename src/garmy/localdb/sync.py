@@ -128,27 +128,32 @@ class SyncManager:
             return
 
         try:
+            data = self.api_client.metrics.get(metric_type.value).get(sync_date)
+            
+            # Extract summary/daily data for health metrics table
+            extracted_data = self.extractor.extract_metric_data(data, metric_type)
+            summary_stored = False
+            
+            
+            if extracted_data and any(v is not None for v in extracted_data.values()):
+                self._store_health_metric(user_id, sync_date, metric_type, extracted_data)
+                summary_stored = True
+            
+            # Also extract timeseries data for applicable metrics
+            timeseries_stored = False
             if metric_type in [MetricType.BODY_BATTERY, MetricType.STRESS, MetricType.HEART_RATE, MetricType.RESPIRATION]:
-                data = self.api_client.metrics.get(metric_type.value).get(sync_date)
                 timeseries_data = self.extractor.extract_timeseries_data(data, metric_type)
                 if timeseries_data:
                     self.db.store_timeseries_batch(user_id, metric_type, timeseries_data)
-                    self.db.update_sync_status(user_id, sync_date, metric_type, 'completed')
-                    stats['completed'] += 1
-                else:
-                    self.db.update_sync_status(user_id, sync_date, metric_type, 'skipped')
-                    stats['skipped'] += 1
+                    timeseries_stored = True
+            
+            # Update status based on what was stored
+            if summary_stored or timeseries_stored:
+                self.db.update_sync_status(user_id, sync_date, metric_type, 'completed')
+                stats['completed'] += 1
             else:
-                data = self.api_client.metrics.get(metric_type.value).get(sync_date)
-                extracted_data = self.extractor.extract_metric_data(data, metric_type)
-
-                if extracted_data and any(v is not None for v in extracted_data.values()):
-                    self._store_health_metric(user_id, sync_date, metric_type, extracted_data)
-                    self.db.update_sync_status(user_id, sync_date, metric_type, 'completed')
-                    stats['completed'] += 1
-                else:
-                    self.db.update_sync_status(user_id, sync_date, metric_type, 'skipped')
-                    stats['skipped'] += 1
+                self.db.update_sync_status(user_id, sync_date, metric_type, 'skipped')
+                stats['skipped'] += 1
 
             self.progress.task_complete(f"{metric_type.value}", sync_date)
 
@@ -208,7 +213,8 @@ class SyncManager:
                 hrv_last_night_avg=data.get('last_night_avg'),
                 hrv_status=data.get('status')
             )
-        elif metric_type == MetricType.RESPIRATION:
+        elif metric_type in [MetricType.RESPIRATION, MetricType.HEART_RATE, MetricType.STRESS, MetricType.BODY_BATTERY, MetricType.STEPS, MetricType.CALORIES]:
+            # Store all extracted data for these metrics
             self.db.store_health_metric(user_id, sync_date, **data)
 
     def _is_metric_completed(self, user_id: int, metric_type: MetricType, sync_date: date) -> bool:

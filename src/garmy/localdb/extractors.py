@@ -26,47 +26,90 @@ class DataExtractor:
             return self._extract_steps_data(data)
         elif metric_type == MetricType.CALORIES:
             return self._extract_calories_data(data)
+        elif metric_type == MetricType.HEART_RATE:
+            return self._extract_heart_rate_summary(data)
+        elif metric_type == MetricType.STRESS:
+            return self._extract_stress_summary(data)
+        elif metric_type == MetricType.BODY_BATTERY:
+            return self._extract_body_battery_summary(data)
         else:
             return None
     
     def _extract_daily_summary_data(self, data: Any) -> Dict[str, Any]:
         """Extract daily summary data."""
         return {
+            # Steps and movement
             'total_steps': getattr(data, 'total_steps', None),
-            'step_goal': getattr(data, 'step_goal', None),
+            'step_goal': getattr(data, 'daily_step_goal', None),  # Correct attribute name!
             'total_distance_meters': getattr(data, 'total_distance_meters', None),
+            
+            # Calories
             'total_calories': getattr(data, 'total_kilocalories', None),
             'active_calories': getattr(data, 'active_kilocalories', None),
             'bmr_calories': getattr(data, 'bmr_kilocalories', None),
+            
+            # Heart rate
             'resting_heart_rate': getattr(data, 'resting_heart_rate', None),
             'max_heart_rate': getattr(data, 'max_heart_rate', None),
             'min_heart_rate': getattr(data, 'min_heart_rate', None),
             'average_heart_rate': getattr(data, 'average_heart_rate', None),
-            'avg_stress_level': getattr(data, 'avg_stress_level', None),
-            'max_stress_level': getattr(data, 'max_stress_level', None),
+            
+            # Stress and recovery
+            'avg_stress_level': getattr(data, 'avg_stress_level', None) or getattr(data, 'stress_avg', None),
+            'max_stress_level': getattr(data, 'max_stress_level', None) or getattr(data, 'stress_max', None),
             'body_battery_high': getattr(data, 'body_battery_highest_value', None),
-            'body_battery_low': getattr(data, 'body_battery_lowest_value', None)
-        }
-    
-    def _extract_sleep_data(self, data: Any) -> Dict[str, Any]:
-        """Extract sleep data with percentages and durations."""
-        sleep_data = {
-            'sleep_duration_hours': getattr(data, 'sleep_time_seconds', 0) / 3600 if getattr(data, 'sleep_time_seconds', None) else None,
-            'deep_sleep_percentage': getattr(data, 'deep_sleep_seconds', 0) / getattr(data, 'sleep_time_seconds', 1) * 100 if getattr(data, 'sleep_time_seconds', None) and getattr(data, 'deep_sleep_seconds', None) else None,
-            'light_sleep_percentage': getattr(data, 'light_sleep_seconds', 0) / getattr(data, 'sleep_time_seconds', 1) * 100 if getattr(data, 'sleep_time_seconds', None) and getattr(data, 'light_sleep_seconds', None) else None,
-            'rem_sleep_percentage': getattr(data, 'rem_sleep_seconds', 0) / getattr(data, 'sleep_time_seconds', 1) * 100 if getattr(data, 'sleep_time_seconds', None) and getattr(data, 'rem_sleep_seconds', None) else None,
-            'awake_percentage': getattr(data, 'awake_seconds', 0) / getattr(data, 'sleep_time_seconds', 1) * 100 if getattr(data, 'sleep_time_seconds', None) and getattr(data, 'awake_seconds', None) else None,
+            'body_battery_low': getattr(data, 'body_battery_lowest_value', None),
+            
+            # Additional metrics that might be in daily summary
             'average_spo2': getattr(data, 'average_sp_o2_value', None),
             'average_respiration': getattr(data, 'average_respiration_value', None)
         }
-        return sleep_data
+    
+    def _extract_sleep_data(self, data: Any) -> Dict[str, Any]:
+        """Extract sleep data from Sleep object - use the properties, stupid!"""
+        return {
+            # Use the built-in properties from Sleep class
+            'sleep_duration_hours': getattr(data, 'sleep_duration_hours', None),
+            'deep_sleep_percentage': getattr(data, 'deep_sleep_percentage', None),
+            'light_sleep_percentage': getattr(data, 'light_sleep_percentage', None),
+            'rem_sleep_percentage': getattr(data, 'rem_sleep_percentage', None),
+            'awake_percentage': getattr(data, 'awake_percentage', None),
+            
+            # Calculate hours from the summary if available
+            'deep_sleep_hours': getattr(data.sleep_summary, 'deep_sleep_seconds', 0) / 3600 if hasattr(data, 'sleep_summary') and data.sleep_summary and getattr(data.sleep_summary, 'deep_sleep_seconds', 0) > 0 else None,
+            'light_sleep_hours': getattr(data.sleep_summary, 'light_sleep_seconds', 0) / 3600 if hasattr(data, 'sleep_summary') and data.sleep_summary and getattr(data.sleep_summary, 'light_sleep_seconds', 0) > 0 else None,
+            'rem_sleep_hours': getattr(data.sleep_summary, 'rem_sleep_seconds', 0) / 3600 if hasattr(data, 'sleep_summary') and data.sleep_summary and getattr(data.sleep_summary, 'rem_sleep_seconds', 0) > 0 else None,
+            'awake_hours': getattr(data.sleep_summary, 'awake_sleep_seconds', 0) / 3600 if hasattr(data, 'sleep_summary') and data.sleep_summary and getattr(data.sleep_summary, 'awake_sleep_seconds', 0) > 0 else None,
+            
+            # Physiological data from summary
+            'average_spo2': getattr(data.sleep_summary, 'average_sp_o2_value', None) if hasattr(data, 'sleep_summary') and data.sleep_summary else None,
+            'average_respiration': getattr(data.sleep_summary, 'average_respiration_value', None) if hasattr(data, 'sleep_summary') and data.sleep_summary else None
+        }
     
     def _extract_heart_rate_summary(self, data: Any) -> Dict[str, Any]:
         """Extract heart rate summary data."""
+        # Heart rate data is in heart_rate_summary nested object
+        summary = getattr(data, 'heart_rate_summary', data)
+        
         return {
-            'resting_heart_rate': getattr(data, 'resting_heart_rate', None),
-            'max_heart_rate': getattr(data, 'max_heart_rate', None),
-            'min_heart_rate': getattr(data, 'min_heart_rate', None)
+            'resting_heart_rate': getattr(summary, 'resting_heart_rate', None),
+            'max_heart_rate': getattr(summary, 'max_heart_rate', None),
+            'min_heart_rate': getattr(summary, 'min_heart_rate', None),
+            'average_heart_rate': getattr(data, 'average_heart_rate', None)  # This is on main object
+        }
+    
+    def _extract_stress_summary(self, data: Any) -> Dict[str, Any]:
+        """Extract stress summary data."""
+        return {
+            'avg_stress_level': getattr(data, 'avg_stress_level', None) or getattr(data, 'stress_avg', None),
+            'max_stress_level': getattr(data, 'max_stress_level', None) or getattr(data, 'stress_max', None)
+        }
+    
+    def _extract_body_battery_summary(self, data: Any) -> Dict[str, Any]:
+        """Extract body battery summary data."""
+        return {
+            'body_battery_high': getattr(data, 'body_battery_highest_value', None) or getattr(data, 'highest_value', None),
+            'body_battery_low': getattr(data, 'body_battery_lowest_value', None) or getattr(data, 'lowest_value', None)
         }
     
     def _extract_training_readiness_data(self, data: Any) -> Dict[str, Any]:
@@ -90,14 +133,30 @@ class DataExtractor:
     
     def _extract_respiration_summary(self, data: Any) -> Dict[str, Any]:
         """Extract respiration summary - unique respiratory metrics."""
+        # Try different possible locations for respiration data
         summary = getattr(data, 'respiration_summary', None)
         if summary:
             return {
+                'average_respiration': getattr(summary, 'average_respiration_value', None),
                 'avg_waking_respiration_value': getattr(summary, 'avg_waking_respiration_value', None),
                 'avg_sleep_respiration_value': getattr(summary, 'avg_sleep_respiration_value', None),
                 'lowest_respiration_value': getattr(summary, 'lowest_respiration_value', None),
                 'highest_respiration_value': getattr(summary, 'highest_respiration_value', None)
             }
+        
+        # Also try direct attributes
+        result = {
+            'average_respiration': getattr(data, 'average_respiration_value', None),
+            'avg_waking_respiration_value': getattr(data, 'avg_waking_respiration_value', None),
+            'avg_sleep_respiration_value': getattr(data, 'avg_sleep_respiration_value', None),
+            'lowest_respiration_value': getattr(data, 'lowest_respiration_value', None),
+            'highest_respiration_value': getattr(data, 'highest_respiration_value', None)
+        }
+        
+        # Return only if we have any data
+        if any(v is not None for v in result.values()):
+            return result
+        
         return {}
     
     def _extract_activity_data(self, data: Any) -> Dict[str, Any]:

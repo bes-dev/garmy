@@ -49,6 +49,18 @@ garmy-mcp server --database health.db --verbose
 }
 ```
 
+**Alternative: Using python -m**
+```json
+{
+  "mcpServers": {
+    "garmy-localdb": {
+      "command": "python",
+      "args": ["-m", "garmy.mcp", "server", "--database", "/full/path/to/health.db", "--max-rows", "500"]
+    }
+  }
+}
+```
+
 ### 4. Restart Claude Desktop
 - Completely quit Claude Desktop
 - Restart the application
@@ -85,6 +97,23 @@ garmy-mcp server --database health.db --verbose
 }
 ```
 
+**Alternative: Using python -m**
+```json
+{
+  "mcpServers": {
+    "garmy-localdb": {
+      "command": "python",
+      "args": [
+        "-m", "garmy.mcp", "server",
+        "--database", "/path/to/health.db",
+        "--max-rows", "100",
+        "--max-rows-absolute", "500"
+      ]
+    }
+  }
+}
+```
+
 ### Development Configuration (Verbose)
 ```json
 {
@@ -93,6 +122,24 @@ garmy-mcp server --database health.db --verbose
       "command": "garmy-mcp",
       "args": [
         "server",
+        "--database", "/path/to/health.db",
+        "--max-rows", "1000",
+        "--enable-query-logging",
+        "--verbose"
+      ]
+    }
+  }
+}
+```
+
+**Alternative: Using python -m**
+```json
+{
+  "mcpServers": {
+    "garmy-localdb": {
+      "command": "python",
+      "args": [
+        "-m", "garmy.mcp", "server",
         "--database", "/path/to/health.db",
         "--max-rows", "1000",
         "--enable-query-logging",

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import Enum
 
 from sqlalchemy import Column, Integer, String, Float, Date, DateTime, JSON, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 
 
 Base = declarative_base()

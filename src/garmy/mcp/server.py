@@ -381,7 +381,7 @@ def create_mcp_server(config: Optional[MCPConfig] = None) -> FastMCP:
         except Exception as e:
             raise ValueError(f"Failed to generate health summary: {str(e)}")
     
-    @mcp.resource()
+    @mcp.resource("file://health_data_guide")
     def health_data_guide() -> str:
         """Complete guide to understanding and querying Garmin health data.
         
