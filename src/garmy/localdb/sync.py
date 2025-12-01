@@ -43,7 +43,12 @@ class SyncManager:
             from garmy import AuthClient, APIClient
 
             auth_client = AuthClient()
-            auth_client.login(email, password)
+            auth_client.login(
+                email,
+                password,
+                prompt_mfa=lambda: input("MFA code: "),
+            )
+
             self.api_client = APIClient(auth_client=auth_client)
 
             self.activities_iterator = ActivitiesIterator(
