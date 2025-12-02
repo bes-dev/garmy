@@ -189,6 +189,8 @@ class DataExtractor:
         if metric_type == MetricType.BODY_BATTERY:
             if hasattr(data, 'body_battery_readings') and data.body_battery_readings:
                 for reading in data.body_battery_readings:
+                    if reading.level is None:
+                        continue
                     metadata = {
                         'status': getattr(reading, 'status', None),
                         'version': getattr(reading, 'version', None)
@@ -198,6 +200,8 @@ class DataExtractor:
         elif metric_type == MetricType.STRESS:
             if hasattr(data, 'stress_readings') and data.stress_readings:
                 for reading in data.stress_readings:
+                    if reading.stress_level is None:
+                        continue
                     metadata = {}
                     if hasattr(reading, 'stress_category'):
                         metadata['stress_category'] = reading.stress_category
@@ -208,7 +212,8 @@ class DataExtractor:
                 for reading in data.heart_rate_values_array:
                     if isinstance(reading, (list, tuple)) and len(reading) >= 2:
                         timestamp, heart_rate = reading[0], reading[1]
-                        timeseries_data.append((timestamp, heart_rate, {}))
+                        if heart_rate is not None:
+                            timeseries_data.append((timestamp, heart_rate, {}))
         
         elif metric_type == MetricType.RESPIRATION:
             # Respiration might have different format - check if it has readings

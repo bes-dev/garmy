@@ -67,6 +67,9 @@ class HealthDB:
         """Store batch of timeseries data."""
         with self.get_session() as session:
             for timestamp, value, metadata in data:
+                # Skip entries with None values (NOT NULL constraint)
+                if value is None:
+                    continue
                 timeseries = TimeSeries(
                     user_id=user_id,
                     metric_type=metric_type.value,
