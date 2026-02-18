@@ -440,6 +440,7 @@ class TestTimestampMixin:
 
     def test_timestamp_to_datetime(self):
         """Test timestamp_to_datetime method."""
+        from datetime import timezone
         # Test Unix timestamp in milliseconds
         timestamp = 1640995200000  # 2022-01-01 00:00:00 UTC
         result = TimestampMixin.timestamp_to_datetime(timestamp)
@@ -448,6 +449,7 @@ class TestTimestampMixin:
         assert result.year == 2022
         assert result.month == 1
         assert result.day == 1
+        assert result.tzinfo == timezone.utc
 
     def test_timestamp_to_datetime_different_values(self):
         """Test timestamp_to_datetime with different values."""

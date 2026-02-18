@@ -208,7 +208,8 @@ class DataExtractor:
                 for reading in data.heart_rate_values_array:
                     if isinstance(reading, (list, tuple)) and len(reading) >= 2:
                         timestamp, heart_rate = reading[0], reading[1]
-                        timeseries_data.append((timestamp, heart_rate, {}))
+                        if heart_rate is not None:
+                            timeseries_data.append((timestamp, heart_rate, {}))
         
         elif metric_type == MetricType.RESPIRATION:
             # Respiration might have different format - check if it has readings
@@ -219,11 +220,16 @@ class DataExtractor:
         return timeseries_data
     
     def _extract_steps_data(self, data: Any) -> Dict[str, Any]:
-        """Extract steps data."""
-        return {
-            'total_steps': getattr(data, 'total_steps', None),
-            'step_goal': getattr(data, 'step_goal', None)
-        }
+        """Extract steps data for the most recent day in the data object."""
+        if hasattr(data, 'daily_steps') and data.daily_steps:
+            # The 'data' object can contain multiple daily summaries.
+            # We assume the last one corresponds to the single 'sync_date' used for the sync operation.
+            latest_day = data.daily_steps[-1]
+            return {
+                'total_steps': getattr(latest_day, 'total_steps', None),
+                'step_goal': getattr(latest_day, 'step_goal', None)
+            }
+        return {}
     
     def _extract_calories_data(self, data: Any) -> Dict[str, Any]:
         """Extract calories data."""

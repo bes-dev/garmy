@@ -214,3 +214,4 @@ log.txt
 test_*coverage*.py
 test_remaining*.py
 test_final*.py
+src/health.db

@@ -33,31 +33,33 @@ class ActivitiesIterator:
         self._advance_to_next_activity()
     
     def _load_next_batch(self) -> bool:
-        """Load next batch of activities from API."""
+        """Load next batch of activities from API in ascending order (oldest first)."""
         if not self.has_more_data:
             return False
-        
+
         try:
             batch_size = self.sync_config.activities_batch_size
+            # Request activities in ascending order (oldest first) to match sync order
             activities_batch = self.api_client.metrics.get('activities').list(
                 limit=batch_size,
-                start=self.batch_offset
+                start=self.batch_offset,
+                sort_order='asc'
             )
-            
+
             if not activities_batch or len(activities_batch) == 0:
                 self.has_more_data = False
                 return False
-            
+
             # Append to cache and update offset
             self.activities_cache.extend(activities_batch)
             self.batch_offset += len(activities_batch)
-            
+
             # Check if we got less than requested (indicates end of data)
             if len(activities_batch) < batch_size:
                 self.has_more_data = False
-            
+
             return True
-            
+
         except Exception as e:
             self.progress.warning(f"Failed to load activities batch at offset {self.batch_offset}: {e}")
             self.has_more_data = False
@@ -112,37 +114,40 @@ class ActivitiesIterator:
         return None
     
     def get_activities_for_date(self, target_date: date) -> List[Any]:
-        """Get all activities for a specific date."""
+        """Get all activities for a specific date.
+
+        Note: Activities are loaded in ascending order (oldest first) from the API.
+        """
         activities = []
-        
+
         # Ensure we have a current activity
         if self.current_activity is None:
             if not self._advance_to_next_activity():
                 return activities
-        
-        # Process activities while they match or are newer than target_date
+
+        # Process activities while they match or are older than target_date
         while self.current_activity is not None:
             if self.current_activity_date is None:
                 # Skip activities without dates
                 if not self._advance_to_next_activity():
                     break
                 continue
-                
-            if self.current_activity_date > target_date:
-                # Activity is newer than target - skip it
+
+            if self.current_activity_date < target_date:
+                # Activity is older than target - skip it
                 if not self._advance_to_next_activity():
                     break
                 continue
-                
+
             elif self.current_activity_date == target_date:
                 # Activity matches target date - collect it
                 activities.append(self.current_activity)
                 if not self._advance_to_next_activity():
                     break
                 continue
-                
-            else:  # self.current_activity_date < target_date
-                # Activity is older than target - we're done for this date
+
+            else:  # self.current_activity_date > target_date
+                # Activity is newer than target - we're done for this date
                 break
-        
+
         return activities

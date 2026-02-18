@@ -76,13 +76,10 @@ def cmd_sync(args) -> int:
             start_date = end_date - timedelta(days=6)
         
         print(f"Syncing data from {start_date} to {end_date}")
-        
-        # Get credentials
-        email, password = get_credentials()
-        
+
         # Setup progress reporter
         progress_reporter = ProgressReporter(use_tqdm=args.progress == 'tqdm')
-        
+
         # Initialize sync manager
         config = LocalDBConfig()
         manager = SyncManager(
@@ -90,10 +87,16 @@ def cmd_sync(args) -> int:
             config=config,
             progress_reporter=progress_reporter
         )
-        
-        # Initialize with credentials
+
+        # Try to initialize with saved tokens first
         print("Connecting to Garmin Connect...")
-        manager.initialize(email, password)
+        try:
+            manager.initialize()
+            print("Using saved authentication tokens")
+        except RuntimeError:
+            # No valid tokens, prompt for credentials
+            email, password = get_credentials()
+            manager.initialize(email, password)
         
         # Parse metrics
         metrics = parse_metrics(args.metrics) if args.metrics else list(MetricType)

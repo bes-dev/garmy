@@ -250,9 +250,15 @@ class ActivitiesAccessor:
         self.api_client = api_client
         self.parse_func = parse_activities_data
 
-    def raw(self, limit: int = 20, start: int = 0) -> Any:
-        """Get raw API response for activities data."""
-        endpoint = f"/activitylist-service/activities/search/activities?limit={limit}&start={start}"
+    def raw(self, limit: int = 20, start: int = 0, sort_order: str = "desc") -> Any:
+        """Get raw API response for activities data.
+
+        Args:
+            limit: Maximum number of activities to return
+            start: Starting offset for pagination
+            sort_order: Sort order - "asc" for oldest first, "desc" for newest first (default)
+        """
+        endpoint = f"/activitylist-service/activities/search/activities?limit={limit}&start={start}&sortOrder={sort_order}"
         try:
             return self.api_client.connectapi(endpoint)
         except (SystemExit, KeyboardInterrupt, GeneratorExit):
@@ -262,17 +268,18 @@ class ActivitiesAccessor:
 
             return handle_api_exception(e, "fetching Activities", endpoint, [])
 
-    def list(self, limit: int = 20, start: int = 0) -> List[ActivitySummary]:
+    def list(self, limit: int = 20, start: int = 0, sort_order: str = "desc") -> List[ActivitySummary]:
         """Get parsed activities data.
 
         Args:
             limit: Maximum number of activities to return (default: 20)
             start: Starting offset for pagination (default: 0)
+            sort_order: Sort order - "asc" for oldest first, "desc" for newest first (default)
 
         Returns:
             List of ActivitySummary objects
         """
-        raw_data = self.raw(limit, start)
+        raw_data = self.raw(limit, start, sort_order)
         if not raw_data:
             return []
         result = self.parse_func(raw_data)

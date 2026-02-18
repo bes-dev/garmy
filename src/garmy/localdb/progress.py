@@ -60,6 +60,10 @@ class ProgressReporter:
     def error(self, message: str):
         """Log error message."""
         self.logger.error(message)
+
+    def warning(self, message: str):
+        """Log warning message."""
+        self.logger.warning(message)
     
     def end_sync(self):
         """End sync progress tracking."""

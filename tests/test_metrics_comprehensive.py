@@ -984,7 +984,7 @@ class TestActivities:
                 result = accessor.list(limit=20)
 
                 assert isinstance(result, list)
-                mock_raw.assert_called_once_with(20, 0)
+                mock_raw.assert_called_once_with(20, 0, 'desc')
                 mock_parse.assert_called_once()
 
     def test_activities_accessor_list_empty_data(self):

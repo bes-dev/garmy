@@ -665,6 +665,7 @@ class TestMetricsDataValidation:
     def test_timestamp_property_edge_cases(self):
         """Test timestamp-related properties with edge cases."""
         from garmy.metrics.body_battery import BodyBatteryReading
+        from datetime import timezone
 
         # Test with very old timestamp
         reading = BodyBatteryReading(
@@ -677,6 +678,7 @@ class TestMetricsDataValidation:
         dt = reading.datetime
         assert isinstance(dt, datetime)
         assert dt.year == 1970
+        assert dt.tzinfo == timezone.utc
 
     def test_list_processing_edge_cases(self):
         """Test list processing with various edge cases."""

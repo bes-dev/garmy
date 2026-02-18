@@ -248,19 +248,22 @@ class TimestampMixin:
 
     @staticmethod
     def timestamp_to_datetime(timestamp: int) -> datetime:
-        """Convert Unix timestamp (milliseconds) to datetime object.
+        """Convert Unix timestamp (milliseconds) to a timezone-aware UTC datetime object.
 
         Args:
             timestamp: Unix timestamp in milliseconds.
 
         Returns:
-            Corresponding datetime object.
+            Corresponding timezone-aware UTC datetime object.
 
         Example:
-            >>> TimestampMixin.timestamp_to_datetime(1640995200000)
-            datetime.datetime(2022, 1, 1, 0, 0)
+            >>> from datetime import timezone
+            >>> ts = TimestampMixin.timestamp_to_datetime(1640995200000)
+            >>> ts.year == 2022 and ts.tzinfo == timezone.utc
+            True
         """
-        return datetime.fromtimestamp(timestamp / 1000)
+        from datetime import timezone
+        return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
 
     @staticmethod
     def iso_to_datetime(iso_string: Optional[str]) -> Optional[datetime]:
