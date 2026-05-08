@@ -242,6 +242,10 @@ class GarmyConfig:
     oauth_consumer_key: str = ""
     oauth_consumer_secret: str = ""
 
+    # Profile path for multi-user support
+    # When set, tokens and database are stored/loaded from this directory
+    profile_path: Optional[str] = None
+
     @classmethod
     def from_environment(cls) -> "GarmyConfig":
         """Create configuration from environment variables."""
@@ -271,6 +275,7 @@ class GarmyConfig:
             oauth_consumer_secret=os.getenv(
                 "GARMY_OAUTH_CONSUMER_SECRET", OAuthCredentials.DEFAULT_CONSUMER_SECRET
             ),
+            profile_path=os.getenv("GARMY_PROFILE_PATH"),
         )
 
 
@@ -400,3 +405,25 @@ def get_app_headers(platform: str = "ios") -> dict:
             "accept": "*/*",
             "accept-encoding": "gzip, deflate, br",
         }
+
+
+def get_profile_path() -> Optional[str]:
+    """Get the profile path from configuration.
+
+    The profile path is a directory containing user-specific data:
+    - OAuth tokens (oauth1_token.json, oauth2_token.json)
+    - Health database (health.db)
+    - Logs (logs/)
+
+    Returns:
+        Profile path string if set, None otherwise.
+        When None, components should fall back to their defaults (e.g., ~/.garmy/).
+
+    Environment Variables:
+        GARMY_PROFILE_PATH: Path to profile directory
+
+    Example:
+        export GARMY_PROFILE_PATH="/path/to/profiles/user1"
+    """
+    config = get_config()
+    return config.profile_path

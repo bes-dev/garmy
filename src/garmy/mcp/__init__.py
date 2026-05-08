@@ -7,6 +7,7 @@ the Model Context Protocol, enabling AI assistants to query health metrics.
 try:
     from .config import MCPConfig
     from .server import create_mcp_server
+
     __all__ = ["MCPConfig", "create_mcp_server"]
 except ImportError:
     # FastMCP not installed

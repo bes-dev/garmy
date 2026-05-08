@@ -9,6 +9,7 @@ This module handles all authentication concerns:
 """
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, Optional, Tuple, Union
@@ -104,10 +105,24 @@ class TokenFileManager:
     def __init__(self, token_dir: Optional[str] = None):
         """Initialize the token file manager.
 
+        Token directory resolution priority:
+        1. Explicit token_dir parameter
+        2. GARMY_PROFILE_PATH environment variable
+        3. Default: ~/.garmy/
+
         Args:
             token_dir: Directory path for storing tokens.
         """
-        self.token_dir = token_dir or str(Path.home() / ".garmy")
+        if token_dir:
+            self.token_dir = token_dir
+        else:
+            # Check environment variable for profile path
+            profile_path = os.getenv("GARMY_PROFILE_PATH")
+            if profile_path:
+                self.token_dir = str(Path(profile_path).expanduser())
+            else:
+                # Default fallback
+                self.token_dir = str(Path.home() / ".garmy")
 
     def load_tokens(self) -> Tuple[Optional[OAuth1Token], Optional[OAuth2Token]]:
         """Load authentication tokens from persistent storage.
@@ -324,7 +339,11 @@ class AuthClient:
             domain: Garmin domain to authenticate with
             timeout: Request timeout in seconds
             retries: Number of retry attempts for failed requests
-            token_dir: Directory path for storing tokens (defaults to ~/.garmy)
+            token_dir: Directory path for storing tokens.
+                       Resolution priority:
+                       1. This parameter if provided
+                       2. GARMY_PROFILE_PATH environment variable
+                       3. Default: ~/.garmy/
         """
         self.domain = domain
 

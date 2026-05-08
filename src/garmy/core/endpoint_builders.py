@@ -225,3 +225,59 @@ def build_daily_summary_endpoint(
     """Build daily summary endpoint URL."""
     builder = UserSummaryEndpointBuilder("daily summary", "")
     return builder.build(date_input, api_client, **kwargs)
+
+
+class UserStatsEndpointBuilder(BaseEndpointBuilder):
+    """Builder for user stats service endpoints (e.g. resting heart rate)."""
+
+    def get_endpoint_name(self) -> str:
+        """Get the name of this endpoint."""
+        return "resting heart rate"
+
+    def build_endpoint_url(self, user_id: str, date_str: str, **kwargs: Any) -> str:
+        """Build user stats service URL."""
+        return (
+            f"/userstats-service/wellness/daily/{user_id}"
+            f"?fromDate={date_str}&untilDate={date_str}"
+        )
+
+
+def build_resting_heart_rate_endpoint(
+    date_input: Union["date", str, None] = None, api_client: Any = None, **kwargs: Any
+) -> str:
+    """Build resting heart rate endpoint URL."""
+    builder = UserStatsEndpointBuilder()
+    return builder.build(date_input, api_client, **kwargs)
+
+
+class EnduranceScoreEndpointBuilder(BaseEndpointBuilder):
+    """Builder for endurance score endpoint (uses query params, no user_id)."""
+
+    def get_endpoint_name(self) -> str:
+        """Get the name of this endpoint."""
+        return "endurance score"
+
+    def build_endpoint_url(self, user_id: str, date_str: str, **kwargs: Any) -> str:
+        """Build endurance score URL with query parameters."""
+        return (
+            f"/metrics-service/metrics/endurancescore"
+            f"?startDate={date_str}&endDate={date_str}&aggregation=daily"
+        )
+
+    def build(
+        self,
+        date_input: Union["date", str, None] = None,
+        api_client: Any = None,
+        **kwargs: Any,
+    ) -> str:
+        """Build endpoint URL without requiring user_id."""
+        date_str = format_date(date_input)
+        return self.build_endpoint_url("", date_str, **kwargs)
+
+
+def build_endurance_score_endpoint(
+    date_input: Union["date", str, None] = None, api_client: Any = None, **kwargs: Any
+) -> str:
+    """Build endurance score endpoint URL."""
+    builder = EnduranceScoreEndpointBuilder()
+    return builder.build(date_input, api_client, **kwargs)

@@ -3,6 +3,7 @@
 import logging
 from datetime import date
 from typing import Optional
+
 from tqdm import tqdm
 
 
@@ -56,11 +57,15 @@ class ProgressReporter:
     def info(self, message: str):
         """Log info message."""
         self.logger.info(message)
-    
+
+    def warning(self, message: str):
+        """Log warning message."""
+        self.logger.warning(message)
+
     def error(self, message: str):
         """Log error message."""
         self.logger.error(message)
-    
+
     def end_sync(self):
         """End sync progress tracking."""
         if self.pbar:

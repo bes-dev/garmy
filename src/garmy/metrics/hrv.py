@@ -75,8 +75,8 @@ def parse_hrv_data(data: Dict[str, Any]) -> "HRV":
         )
 
     # Parse HRV summary
-    hrv_summary_data = snake_dict.get("hrv_summary", {})
-    baseline_data = hrv_summary_data.get("baseline", {})
+    hrv_summary_data = snake_dict.get("hrv_summary") or {}
+    baseline_data = hrv_summary_data.get("baseline") or {}
 
     baseline = HRVBaseline(
         low_upper=baseline_data.get("low_upper", 0),
@@ -89,7 +89,7 @@ def parse_hrv_data(data: Dict[str, Any]) -> "HRV":
         calendar_date=hrv_summary_data.get("calendar_date", ""),
         weekly_avg=hrv_summary_data.get("weekly_avg", 0),
         last_night_avg=hrv_summary_data.get("last_night_avg", 0),
-        last_night_5_min_high=hrv_summary_data.get("last_night_5_min_high", 0),
+        last_night_5_min_high=hrv_summary_data.get("last_night5_min_high", 0),
         baseline=baseline,
         status=hrv_summary_data.get("status", ""),
         feedback_phrase=hrv_summary_data.get("feedback_phrase", ""),

@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 if TYPE_CHECKING:
     from ..auth.client import AuthClient
+    from ..metrics.health_snapshot import HealthSnapshotAccessor
+    from ..workouts.client import WorkoutClient
     from .registry import MetricRegistry
 
 from urllib.parse import urljoin
@@ -285,6 +287,50 @@ class APIClient:
             self._metrics = MetricRegistry(self)
         return self._metrics
 
+    @property
+    def workouts(self) -> "WorkoutClient":
+        """Get the workout client for workout operations.
+
+        Provides lazy-loaded access to Garmin Connect workout operations
+        including creating, updating, deleting, and scheduling workouts.
+
+        Returns:
+            WorkoutClient instance for workout operations
+
+        Example:
+            >>> client = APIClient(auth_client=auth)
+            >>> workouts = client.workouts.list_workouts()
+            >>> new_workout = client.workouts.create_workout(workout)
+        """
+        if not hasattr(self, "_workouts"):
+            from ..workouts.client import WorkoutClient
+
+            self._workouts = WorkoutClient(self)
+        return self._workouts
+
+    @property
+    def health_snapshots(self) -> "HealthSnapshotAccessor":
+        """Get the Health Snapshot accessor.
+
+        Provides lazy-loaded access to Garmin Health Snapshot recordings,
+        the on-demand ~2-minute multi-metric measurements taken on a compatible
+        watch. Uses the GraphQL endpoint and supports range-based queries.
+
+        Returns:
+            HealthSnapshotAccessor instance for fetching snapshots.
+
+        Example:
+            >>> client = APIClient(auth_client=auth)
+            >>> recent = client.health_snapshots.latest(days=30)
+            >>> for snap in recent:
+            ...     print(snap.calendar_date, snap.heart_rate.avg_value)
+        """
+        if not hasattr(self, "_health_snapshots"):
+            from ..metrics.health_snapshot import HealthSnapshotAccessor
+
+            self._health_snapshots = HealthSnapshotAccessor(self)
+        return self._health_snapshots
+
     def get_user_profile(self) -> Dict[str, Any]:
         """Get user profile information from the API.
 
@@ -327,8 +373,8 @@ class APIClient:
         # Use HTTP client to build URL
         url = self.http_client.build_url(subdomain, path)
 
-        # Get authentication headers if needed
-        headers = kwargs.get("headers", {})
+        # Extract headers from kwargs (pop to avoid passing twice)
+        headers = kwargs.pop("headers", {})
         if api:
             auth_headers = self.auth_delegate.get_auth_headers()
             headers.update(auth_headers)

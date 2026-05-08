@@ -115,13 +115,21 @@ class SleepSummary(TimestampMixin):
         return self.timestamp_to_datetime(self.sleep_end_timestamp_local)
 
     @property
-    def total_sleep_duration_hours(self) -> float:
+    def total_sleep_duration_hours(self) -> Optional[float]:
         """Get total sleep duration in hours."""
+        if self.sleep_time_seconds is None:
+            return None
         return self.sleep_time_seconds / 3600
 
     @property
-    def sleep_efficiency_percentage(self) -> float:
+    def sleep_efficiency_percentage(self) -> Optional[float]:
         """Calculate sleep efficiency (sleep time / time in bed)."""
+        if (
+            self.sleep_end_timestamp_local is None
+            or self.sleep_start_timestamp_local is None
+            or self.sleep_time_seconds is None
+        ):
+            return None
         time_in_bed = (
             self.sleep_end_timestamp_local - self.sleep_start_timestamp_local
         ) / 1000
@@ -144,6 +152,9 @@ class Sleep:
         wellness_epoch_spo2_data_dto_list: SpO2 readings throughout the night (list of dicts)
         wellness_epoch_respiration_data_dto_list: Respiration readings throughout the night
             (list of dicts)
+        skin_temp_data_exists: Whether skin temperature data is available
+        skin_temp_deviation_c: Skin temperature deviation in Celsius
+        skin_temp_deviation_f: Skin temperature deviation in Fahrenheit
 
     Example:
         >>> sleep = garmy.sleep.get()
@@ -164,6 +175,11 @@ class Sleep:
     wellness_epoch_respiration_data_dto_list: List[Dict[str, Any]] = field(
         default_factory=list
     )
+
+    # Top-level skin temperature fields
+    skin_temp_data_exists: bool = False
+    skin_temp_deviation_c: Optional[float] = None
+    skin_temp_deviation_f: Optional[float] = None
 
     def __str__(self) -> str:
         """Format sleep data for human-readable display."""
@@ -204,49 +220,45 @@ class Sleep:
         return "\n".join(lines) if lines else "Sleep data available"
 
     @property
-    def sleep_duration_hours(self) -> float:
+    def sleep_duration_hours(self) -> Optional[float]:
         """Get total sleep duration in hours."""
         return self.sleep_summary.total_sleep_duration_hours
 
     @property
-    def deep_sleep_percentage(self) -> float:
+    def deep_sleep_percentage(self) -> Optional[float]:
         """Get deep sleep as percentage of total sleep."""
-        if self.sleep_summary.sleep_time_seconds > 0:
-            return (
-                self.sleep_summary.deep_sleep_seconds
-                / self.sleep_summary.sleep_time_seconds
-            ) * 100
-        return 0
+        total = self.sleep_summary.sleep_time_seconds
+        deep = self.sleep_summary.deep_sleep_seconds
+        if total and total > 0 and deep is not None:
+            return (deep / total) * 100
+        return None
 
     @property
-    def light_sleep_percentage(self) -> float:
+    def light_sleep_percentage(self) -> Optional[float]:
         """Get light sleep as percentage of total sleep."""
-        if self.sleep_summary.sleep_time_seconds > 0:
-            return (
-                self.sleep_summary.light_sleep_seconds
-                / self.sleep_summary.sleep_time_seconds
-            ) * 100
-        return 0
+        total = self.sleep_summary.sleep_time_seconds
+        light = self.sleep_summary.light_sleep_seconds
+        if total and total > 0 and light is not None:
+            return (light / total) * 100
+        return None
 
     @property
-    def rem_sleep_percentage(self) -> float:
+    def rem_sleep_percentage(self) -> Optional[float]:
         """Get REM sleep as percentage of total sleep."""
-        if self.sleep_summary.sleep_time_seconds > 0:
-            return (
-                self.sleep_summary.rem_sleep_seconds
-                / self.sleep_summary.sleep_time_seconds
-            ) * 100
-        return 0
+        total = self.sleep_summary.sleep_time_seconds
+        rem = self.sleep_summary.rem_sleep_seconds
+        if total and total > 0 and rem is not None:
+            return (rem / total) * 100
+        return None
 
     @property
-    def awake_percentage(self) -> float:
+    def awake_percentage(self) -> Optional[float]:
         """Get awake time as percentage of total sleep period."""
-        if self.sleep_summary.sleep_time_seconds > 0:
-            return (
-                self.sleep_summary.awake_sleep_seconds
-                / self.sleep_summary.sleep_time_seconds
-            ) * 100
-        return 0
+        total = self.sleep_summary.sleep_time_seconds
+        awake = self.sleep_summary.awake_sleep_seconds
+        if total and total > 0 and awake is not None:
+            return (awake / total) * 100
+        return None
 
     @property
     def spo2_readings_count(self) -> int:
@@ -264,17 +276,34 @@ class Sleep:
         return len(self.sleep_movement)
 
 
-# Create parser using factory function for nested summary + raw data
-parse_sleep_data = create_nested_summary_parser(
-    Sleep,
-    SleepSummary,
-    "daily_sleep_dto",
-    [
-        "sleep_movement",
-        "wellness_epoch_spo2_data_dto_list",
-        "wellness_epoch_respiration_data_dto_list",
-    ],
-)
+def parse_sleep_data(data: Dict[str, Any]) -> Sleep:
+    """Parse sleep data including top-level skin temperature fields.
+
+    This custom parser extends the standard nested summary parser to also
+    capture skin temperature data that exists at the top level of the
+    API response (not nested in dailySleepDTO).
+    """
+    # Use existing parser for nested summary and base data
+    base_parser = create_nested_summary_parser(
+        Sleep,
+        SleepSummary,
+        "daily_sleep_dto",
+        [
+            "sleep_movement",
+            "wellness_epoch_spo2_data_dto_list",
+            "wellness_epoch_respiration_data_dto_list",
+        ],
+    )
+
+    # Parse base data
+    sleep = base_parser(data)
+
+    # Add top-level skin temp fields (these are outside dailySleepDTO)
+    sleep.skin_temp_data_exists = data.get("skinTempDataExists", False)
+    sleep.skin_temp_deviation_c = data.get("avgSkinTempDeviationC")
+    sleep.skin_temp_deviation_f = data.get("avgSkinTempDeviationF")
+
+    return sleep
 
 
 def build_sleep_endpoint(

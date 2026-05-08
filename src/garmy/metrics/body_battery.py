@@ -81,7 +81,7 @@ class BodyBattery:
 
     user_profile_pk: int
     calendar_date: str
-    body_battery_values_array: List[List[Any]]
+    body_battery_values_array: Optional[List[List[Any]]] = None
 
     # Optional fields we ignore for Body Battery analysis
     start_timestamp_gmt: Optional["datetime"] = None
@@ -100,6 +100,8 @@ class BodyBattery:
     def body_battery_readings(self) -> List[BodyBatteryReading]:
         """Parse raw Body Battery data into structured readings."""
         readings = []
+        if not self.body_battery_values_array:
+            return readings
         for item in self.body_battery_values_array:
             if len(item) >= 4:
                 readings.append(

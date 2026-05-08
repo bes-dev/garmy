@@ -80,7 +80,9 @@ class TestBaseHTTPClient:
             "garmy.core.http_client.Session"
         ) as mock_session_class, patch.object(
             client, "_get_default_headers", return_value={"Test": "Header"}
-        ), patch.object(client, "_create_retry_strategy") as mock_retry:
+        ), patch.object(
+            client, "_create_retry_strategy"
+        ) as mock_retry:
             mock_session = Mock()
             mock_session_class.return_value = mock_session
             mock_retry_strategy = Mock()
@@ -101,7 +103,9 @@ class TestBaseHTTPClient:
             "garmy.core.http_client.Session"
         ) as mock_session_class, patch.object(
             client, "_get_default_headers", return_value={}
-        ), patch.object(client, "_create_retry_strategy") as mock_retry, patch(
+        ), patch.object(
+            client, "_create_retry_strategy"
+        ) as mock_retry, patch(
             "garmy.core.http_client.HTTPAdapter"
         ) as mock_adapter_class:
             mock_session = Mock()

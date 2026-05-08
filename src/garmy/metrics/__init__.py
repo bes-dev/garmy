@@ -16,6 +16,12 @@ Available Metrics:
     Calories: Daily calorie data including burned, active, BMR, and goal tracking
     DailySummary: Comprehensive daily summary with all major health metrics in one place
     Activities: Activity summaries with type, duration, heart rate, and basic performance data
+    SpO2: Blood oxygen saturation with hourly average readings
+    RestingHeartRate: Dedicated resting heart rate from user stats service
+    IntensityMinutes: Moderate/vigorous intensity minutes with 15-min timeseries
+    Floors: Floors climbed and descended throughout the day
+    TrainingStatus: Training status, acute/chronic load balance
+    EnduranceScore: Endurance score with classification level
 
 Modern API Usage:
     >>> from garmy import AuthClient, APIClient
@@ -83,24 +89,44 @@ from .activities import ActivitySummary
 from .body_battery import BodyBattery
 from .calories import Calories
 from .daily_summary import DailySummary
+from .floors import Floors
+from .health_snapshot import (
+    HealthSnapshot,
+    HealthSnapshotSummary,
+    HealthSnapshotZone,
+)
 from .heart_rate import HeartRate
 from .hrv import HRV
+from .intensity_minutes import IntensityMinutes
 from .respiration import Respiration
+from .resting_heart_rate import RestingHeartRate
 from .sleep import Sleep
+from .spo2 import SpO2
 from .steps import Steps
 from .stress import Stress
 from .training_readiness import TrainingReadiness
+from .training_status import TrainingStatus
+from .endurance_score import EnduranceScore
 
 __all__: List[str] = [
+    "EnduranceScore",
+    "Floors",
     "HRV",
     "ActivitySummary",
     "BodyBattery",
     "Calories",
     "DailySummary",
+    "HealthSnapshot",
+    "HealthSnapshotSummary",
+    "HealthSnapshotZone",
     "HeartRate",
+    "IntensityMinutes",
     "Respiration",
+    "RestingHeartRate",
     "Sleep",
+    "SpO2",
     "Steps",
     "Stress",
     "TrainingReadiness",
+    "TrainingStatus",
 ]

@@ -108,9 +108,9 @@ class TestAuthModuleExports:
         ]
 
         for name in internal_names:
-            assert not hasattr(auth_module, name), (
-                f"Internal {name} should not be exported"
-            )
+            assert not hasattr(
+                auth_module, name
+            ), f"Internal {name} should not be exported"
 
     def test_import_style_consistency(self):
         """Test imports follow consistent patterns."""
@@ -205,9 +205,9 @@ class TestAuthModuleExports:
         actual_resume_params = list(resume_sig.parameters.keys())
 
         for param in expected_resume_params:
-            assert param in actual_resume_params, (
-                f"resume_login missing parameter: {param}"
-            )
+            assert (
+                param in actual_resume_params
+            ), f"resume_login missing parameter: {param}"
 
     def test_type_hints_available(self):
         """Test that type hints are available for main functions."""

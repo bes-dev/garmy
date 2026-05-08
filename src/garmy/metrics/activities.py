@@ -12,7 +12,7 @@ because it has a different API pattern (list-based rather than date-based).
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import lru_cache
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from ..core.base import MetricConfig
 from ..core.utils import TimestampMixin, create_list_parser
@@ -308,6 +308,66 @@ class ActivitiesAccessor:
             for activity in activities
             if activity.activity_type_name.lower() == activity_type.lower()
         ]
+
+    def get_activity_details(self, activity_id: Union[int, str]) -> Dict[str, Any]:
+        """Get detailed activity data by ID.
+
+        Args:
+            activity_id: The activity ID to fetch details for.
+
+        Returns:
+            Dict containing full activity details including distance, calories,
+            elevation, speed, heart rate zones, and more.
+        """
+        endpoint = f"/activity-service/activity/{activity_id}"
+        try:
+            return self.api_client.connectapi(endpoint)
+        except (SystemExit, KeyboardInterrupt, GeneratorExit):
+            raise
+        except Exception as e:
+            from ..core.utils import handle_api_exception
+
+            return handle_api_exception(e, "fetching activity details", endpoint, {})
+
+    def get_exercise_sets(self, activity_id: Union[int, str]) -> Dict[str, Any]:
+        """Get exercise sets for a strength training activity.
+
+        Args:
+            activity_id: The activity ID to fetch exercise sets for.
+
+        Returns:
+            Dict containing exerciseSets array with reps, weight, duration,
+            exercise category, and set type (ACTIVE/REST) for each set.
+        """
+        endpoint = f"/activity-service/activity/{activity_id}/exerciseSets"
+        try:
+            return self.api_client.connectapi(endpoint)
+        except (SystemExit, KeyboardInterrupt, GeneratorExit):
+            raise
+        except Exception as e:
+            from ..core.utils import handle_api_exception
+
+            return handle_api_exception(e, "fetching exercise sets", endpoint, {})
+
+    def get_activity_splits(self, activity_id: Union[int, str]) -> Dict[str, Any]:
+        """Get split/lap data for an activity.
+
+        Args:
+            activity_id: The activity ID to fetch splits for.
+
+        Returns:
+            Dict containing split data for running, cycling, and other
+            activities with lap/split information.
+        """
+        endpoint = f"/activity-service/activity/{activity_id}/splits"
+        try:
+            return self.api_client.connectapi(endpoint)
+        except (SystemExit, KeyboardInterrupt, GeneratorExit):
+            raise
+        except Exception as e:
+            from ..core.utils import handle_api_exception
+
+            return handle_api_exception(e, "fetching activity splits", endpoint, {})
 
     # For compatibility with MetricAccessor interface
     def get(self, *_args: Any, **_kwargs: Any) -> Any:

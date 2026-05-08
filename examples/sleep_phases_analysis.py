@@ -244,12 +244,14 @@ def get_date_input(prompt: str, default_date: date = None) -> date:
     """Get a date input from the user with validation."""
     while True:
         if default_date:
-            date_str = input(f"{prompt} (YYYY-MM-DD) [default: {default_date}]: ").strip()
+            date_str = input(
+                f"{prompt} (YYYY-MM-DD) [default: {default_date}]: "
+            ).strip()
             if not date_str:
                 return default_date
         else:
             date_str = input(f"{prompt} (YYYY-MM-DD): ").strip()
-        
+
         try:
             parsed_date = datetime.strptime(date_str, "%Y-%m-%d").date()
             return parsed_date
@@ -261,21 +263,21 @@ def get_date_range() -> tuple[date, date]:
     """Get start and end dates from user input."""
     print("\n📅 Date Range Selection")
     print("-" * 30)
-    
+
     # Default dates
     default_start = date.today() - timedelta(days=30)  # 30 days ago
     default_end = date.today()
-    
+
     print("Select the date range for sleep analysis:")
     start_date = get_date_input("Start date", default_start)
-    
+
     # Validate end date is after start date
     while True:
         end_date = get_date_input("End date", default_end)
         if end_date >= start_date:
             break
         print(f"❌ End date must be on or after start date ({start_date})")
-    
+
     return start_date, end_date
 
 
@@ -288,7 +290,7 @@ def main():
 
     # Get date range from user
     start_date, end_date = get_date_range()
-    
+
     total_days = (end_date - start_date).days + 1
     print(f"\n📊 Analysis Settings:")
     print(f"   Start date: {start_date}")

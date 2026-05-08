@@ -39,9 +39,13 @@ class TestMetricsPackageInit:
             BodyBattery,
             Calories,
             DailySummary,
+            Floors,
             HeartRate,
+            IntensityMinutes,
             Respiration,
+            RestingHeartRate,
             Sleep,
+            SpO2,
             Steps,
             Stress,
             TrainingReadiness,
@@ -54,9 +58,13 @@ class TestMetricsPackageInit:
             BodyBattery,
             Calories,
             DailySummary,
+            Floors,
             HeartRate,
+            IntensityMinutes,
             Respiration,
+            RestingHeartRate,
             Sleep,
+            SpO2,
             Steps,
             Stress,
             TrainingReadiness,
@@ -70,17 +78,26 @@ class TestMetricsPackageInit:
         import garmy.metrics as metrics_module
 
         expected_exports = {
+            "EnduranceScore",
+            "Floors",
             "HRV",
             "ActivitySummary",
             "BodyBattery",
             "Calories",
             "DailySummary",
+            "HealthSnapshot",
+            "HealthSnapshotSummary",
+            "HealthSnapshotZone",
             "HeartRate",
+            "IntensityMinutes",
             "Respiration",
+            "RestingHeartRate",
             "Sleep",
+            "SpO2",
             "Steps",
             "Stress",
             "TrainingReadiness",
+            "TrainingStatus",
         }
 
         actual_exports = set(metrics_module.__all__)
@@ -1365,6 +1382,7 @@ class TestOtherMetrics:
             "calories",
             "daily_summary",
             "respiration",
+            "spo2",
             "steps",
             "stress",
         ]
@@ -1471,9 +1489,9 @@ class TestMetricsIntegration:
 
         for name in metrics_module.__all__:
             metric_class = getattr(metrics_module, name)
-            assert hasattr(metric_class, "__dataclass_fields__"), (
-                f"{name} is not a dataclass"
-            )
+            assert hasattr(
+                metric_class, "__dataclass_fields__"
+            ), f"{name} is not a dataclass"
 
     def test_metric_configs_have_required_fields(self):
         """Test all metric configs have required fields."""
@@ -1487,6 +1505,7 @@ class TestMetricsIntegration:
             "calories",
             "daily_summary",
             "respiration",
+            "spo2",
             "steps",
             "stress",
         ]
